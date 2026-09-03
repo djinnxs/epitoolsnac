@@ -256,9 +256,13 @@ if temp_semanal is not None and not temp_semanal.empty:
     exog_temp = temp_merged.ffill().bfill().values
 
 # Backtest (walk-forward) — disponible para SARIMA/ETS (cacheado para no refitear en cada interacción)
+# cache_data requiere argumentos hashables → pasar tuplas y reemplazar NaN en exog.
+_exog_bt = None
+if exog_temp is not None:
+    _exog_bt = tuple(0.0 if (x is None or (isinstance(x, float) and np.isnan(x))) else float(x) for x in exog_temp)
 resultados_backtest = backtest_walkforward_cached(
-    df_ts['CANTIDAD'].values, horizon=13, n_rets=3,
-    exog=exog_temp if exog_temp is not None and not np.isnan(exog_temp).all() else None
+    tuple(float(x) for x in df_ts['CANTIDAD'].values), horizon=13, n_rets=3,
+    exog=_exog_bt
 )
 
 # TABS
