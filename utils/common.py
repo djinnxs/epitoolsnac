@@ -77,81 +77,136 @@ def _read_parquet(filename='base_semanal.parquet'):
     return pd.read_parquet(path)
 
 def _parse_sql(sql, df):
-    """Traduce SQL básico a operaciones pandas."""
+    """Traduce SQL básico a operaciones pandas. Maneja WHERE con strings, ORDER BY, GROUP BY, LIMIT."""
+    import re
     q = sql.strip().rstrip(';')
-    q_upper = q.upper()
 
-    # SELECT ... DISTINCT
-    if 'DISTINCT' in q_upper:
-        # Extraer columnas: SELECT DISTINCT col1, col2
-        after_select = q_upper.split('DISTINCT')[1]
-        cols_part = after_select.split('FROM')[0].strip()
-        cols = [c.strip() for c in cols_part.split(',')]
+    # --- Extraer cláusulas SQL ---
+    def extract_clause(sql, keyword):
+        m = re.search(rf'\b{keyword}\b', sql, re.IGNORECASE)
+        if not m:
+            return None, sql
+        start = m.end()
+        for kw in ['ORDER BY', 'GROUP BY', 'HAVING', 'LIMIT', 'UNION']:
+            km = re.search(rf'\b{kw}\b', sql[start:], re.IGNORECASE)
+            if km:
+                return sql[start:start+km.start()].strip(), sql[:start] + sql[start+km.start():]
+        return sql[start:].strip(), sql[:start]
 
-        # WHERE
-        if 'WHERE' in q_upper:
-            where_part = q.split('WHERE')[1]
-            if 'ORDER BY' in where_part:
-                where_part = where_part.split('ORDER BY')[0]
-            df = df.query(where_part.strip())
+    # Extraer en orden inverso para que cada cláusula no afecte a la siguiente
+    limit_clause, q2 = extract_clause(q, 'LIMIT')
+    order_clause, q3 = extract_clause(q2, 'ORDER BY')
+    group_clause, q4 = extract_clause(q3, 'GROUP BY')
+    where_clause, q5 = extract_clause(q4, 'WHERE')
+    from_match = re.search(r'\bFROM\b', q5, re.IGNORECASE)
+    if from_match:
+        before_from = q5[:from_match.start()].strip()
+        after_from = q5[from_match.end():].strip()
+    else:
+        before_from = q5.strip()
+        after_from = ''
 
-        result = df[cols].drop_duplicates()
-        # ORDER BY
-        if 'ORDER BY' in q_upper:
-            order_part = q.split('ORDER BY')[1].strip()
-            desc = 'DESC' in order_part.upper()
-            order_col = order_part.replace('DESC', '').replace('ASC', '').strip()
-            result = result.sort_values(order_col, ascending=not desc)
-        return result
+    # --- Detectar DISTINCT ---
+    is_distinct = 'DISTINCT' in before_from.upper()
+    select_part = re.sub(r'\bSELECT\b', '', before_from, flags=re.IGNORECASE)
+    select_part = re.sub(r'\bDISTINCT\b', '', select_part, flags=re.IGNORECASE).strip()
+    cols = [c.strip() for c in select_part.split(',')]
 
-    # SELECT ... GROUP BY
-    if 'GROUP BY' in q_upper:
-        after_select = q_upper.split('FROM')[0].replace('SELECT', '').strip()
-        cols = [c.strip() for c in after_select.split(',')]
+    # --- Función para convertir condición WHERE a boolean mask pandas ---
+    def _eval_condition(cond_str, df):
+        cond_str = cond_str.strip()
+        # Soportar =, !=, <>, >, <, >=, <=
+        m = re.match(r"(\w+)\s*(=|!=|<>|>=|<=|>|<)\s*'([^']*)'", cond_str)
+        if m:
+            col, op, val = m.group(1), m.group(2), m.group(3)
+            if col not in df.columns:
+                return pd.Series(True, index=df.index)
+            if op == '=':
+                return df[col].astype(str) == val
+            elif op in ('!=', '<>'):
+                return df[col].astype(str) != val
+            elif op == '>':
+                return df[col] > pd.to_numeric(val, errors='coerce')
+            elif op == '<':
+                return df[col] < pd.to_numeric(val, errors='coerce')
+            elif op == '>=':
+                return df[col] >= pd.to_numeric(val, errors='coerce')
+            elif op == '<=':
+                return df[col] <= pd.to_numeric(val, errors='coerce')
 
-        # WHERE
-        if 'WHERE' in q_upper:
-            where_part = q.split('WHERE')[1]
-            for keyword in ['GROUP BY', 'ORDER BY', 'HAVING']:
-                if keyword in where_part.upper():
-                    where_part = where_part.split(keyword)[0]
-            df = df.query(where_part.strip())
+        m = re.match(r"(\w+)\s*(=|!=|<>|>=|<=|>|<)\s*(\d+(?:\.\d+)?)", cond_str)
+        if m:
+            col, op, val = m.group(1), m.group(2), float(m.group(3))
+            if col not in df.columns:
+                return pd.Series(True, index=df.index)
+            val_int = int(val) if val == int(val) else val
+            if op == '=':
+                try:
+                    return df[col].astype(int) == int(val)
+                except (ValueError, TypeError):
+                    return df[col] == val_int
+            elif op in ('!=', '<>'):
+                try:
+                    return df[col].astype(int) != int(val)
+                except (ValueError, TypeError):
+                    return df[col] != val_int
+            elif op == '>':
+                return df[col] > val
+            elif op == '<':
+                return df[col] < val
+            elif op == '>=':
+                return df[col] >= val
+            elif op == '<=':
+                return df[col] <= val
 
-        result = df.groupby(cols, as_index=False).size().rename(columns={'size': 'CANTIDAD'})
+        return pd.Series(True, index=df.index)
 
-        # ORDER BY
-        if 'ORDER BY' in q_upper:
-            order_part = q.split('ORDER BY')[1].strip()
-            desc = 'DESC' in order_part.upper()
-            order_col = order_part.replace('DESC', '').replace('ASC', '').strip()
-            result = result.sort_values(order_col, ascending=not desc)
-        return result
+    def _apply_where(where_str, df):
+        if not where_str:
+            return df
+        # Separar por AND (soporte básico, sin paréntesis anidados)
+        conditions = re.split(r'\bAND\b', where_str, flags=re.IGNORECASE)
+        mask = pd.Series(True, index=df.index)
+        for cond in conditions:
+            cond = cond.strip()
+            if cond:
+                mask = mask & _eval_condition(cond, df)
+        return df[mask]
 
-    # SELECT simples
-    after_select = q_upper.split('FROM')[0].replace('SELECT', '').strip()
-    cols = [c.strip() for c in after_select.split(',')]
+    # --- Aplicar filtros y operaciones ---
+    result = df.copy()
+    result = _apply_where(where_clause, result)
 
-    # WHERE
-    if 'WHERE' in q_upper:
-        where_part = q.split('WHERE')[1]
-        for keyword in ['ORDER BY', 'LIMIT', 'GROUP BY']:
-            if keyword in where_part.upper():
-                where_part = where_part.split(keyword)[0]
-        df = df.query(where_part.strip())
+    # --- GROUP BY ---
+    if group_clause:
+        group_cols = [c.strip() for c in group_clause.split(',')]
+        result = result.groupby(group_cols, as_index=False).size().rename(columns={'size': 'CANTIDAD'})
 
-    result = df[cols] if cols != ['*'] else df
+    # --- SELECT ---
+    if is_distinct:
+        result = result[cols].drop_duplicates()
+    elif cols != ['*'] and all(c in result.columns for c in cols):
+        result = result[cols]
 
-    # ORDER BY
-    if 'ORDER BY' in q_upper:
-        order_part = q.split('ORDER BY')[1].strip()
-        desc = 'DESC' in order_part.upper()
-        order_col = order_part.replace('DESC', '').replace('ASC', '').strip()
-        result = result.sort_values(order_col, ascending=not desc)
+    # --- ORDER BY ---
+    if order_clause:
+        order_cols = [c.strip() for c in order_clause.split(',')]
+        asc_list = []
+        sort_cols = []
+        for oc in order_cols:
+            desc = 'DESC' in oc.upper()
+            col_name = oc.replace('DESC', '').replace('ASC', '').strip()
+            sort_cols.append(col_name)
+            asc_list.append(not desc)
+        if all(c in result.columns for c in sort_cols):
+            result = result.sort_values(sort_cols, ascending=asc_list)
 
-    # LIMIT
-    if 'LIMIT' in q_upper:
-        limit_val = int(q.split('LIMIT')[1].strip())
-        result = result.head(limit_val)
+    # --- LIMIT ---
+    if limit_clause:
+        try:
+            result = result.head(int(limit_clause.strip()))
+        except ValueError:
+            pass
 
     return result
 
