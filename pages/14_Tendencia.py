@@ -387,25 +387,24 @@ with tab4:
     if len(df_ts) < 52:
         st.info("No hay datos suficientes para ejecutar el backtest (se necesitan ~52 semanas de histórico).")
     else:
-        if st.button("▶️ Ejecutar backtest", key="btn_backtest"):
-            with st.spinner("Ejecutando backtest (solo ETS, rápida)..."):
-                _exog_bt = None
-                if exog_temp is not None:
-                    _exog_bt = tuple(0.0 if (x is None or (isinstance(x, float) and np.isnan(x))) else float(x) for x in exog_temp)
-                resultados_backtest = backtest_walkforward_cached(
-                    tuple(float(x) for x in df_ts['CANTIDAD'].values), horizon=13, n_rets=3,
-                    exog=_exog_bt
-                )
-            if resultados_backtest:
-                df_cmp = pd.DataFrame([
-                    {'Modelo': k, 'MAPE (%)': round(v['mape'], 2), 'RMSE': round(v['rmse'], 2)}
-                    for k, v in resultados_backtest.items()
-                ])
-                mejor_mape = df_cmp.loc[df_cmp['MAPE (%)'].idxmin()]['Modelo'] if not df_cmp.empty else '—'
-                st.success(f"🏆 El modelo con menor error (MAPE) en holdout fue: **{mejor_mape}**")
-                st.dataframe(df_cmp, use_container_width=True)
-            else:
-                st.warning("El backtest no pudo converger para ningún modelo con estos datos.")
+        # cache_data requiere argumentos hashables → pasar tuplas y reemplazar NaN en exog.
+        _exog_bt = None
+        if exog_temp is not None:
+            _exog_bt = tuple(0.0 if (x is None or (isinstance(x, float) and np.isnan(x))) else float(x) for x in exog_temp)
+        resultados_backtest = backtest_walkforward_cached(
+            tuple(float(x) for x in df_ts['CANTIDAD'].values), horizon=13, n_rets=3,
+            exog=_exog_bt
+        )
+        if resultados_backtest:
+            df_cmp = pd.DataFrame([
+                {'Modelo': k, 'MAPE (%)': round(v['mape'], 2), 'RMSE': round(v['rmse'], 2)}
+                for k, v in resultados_backtest.items()
+            ])
+            mejor_mape = df_cmp.loc[df_cmp['MAPE (%)'].idxmin()]['Modelo'] if not df_cmp.empty else '—'
+            st.success(f"🏆 El modelo con menor error (MAPE) en holdout fue: **{mejor_mape}**")
+            st.dataframe(df_cmp, use_container_width=True)
+        else:
+            st.warning("El backtest no pudo converger para ningún modelo con estos datos.")
 
 st.markdown("---")
 st.markdown("<div style='text-align: center; color: gray;'>📅 Semanas Epidemiológicas | 🌎 Hemisferio Sur</div>", unsafe_allow_html=True)
