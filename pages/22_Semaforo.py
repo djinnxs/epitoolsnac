@@ -288,6 +288,9 @@ if st.button("🚦 Calcular Semáforo", type="primary"):
     # ── Mapa del semáforo ──────────────────────────────────────────────────────
     gdf = gdf.rename(columns={'in1': 'COD_DEPTO'})
     merge  = gdf.merge(df, on='COD_DEPTO', how='left')
+    for c in ['COD_DEPTO', 'DEPARTAMENTO']:
+        if c in merge.columns:
+            merge[c] = merge[c].astype(str)
 
     col_map, col_tabla = st.columns([3, 2])
 
@@ -296,11 +299,12 @@ if st.button("🚦 Calcular Semáforo", type="primary"):
 
         # Mapa de riesgo continuo (más expresivo)
         merge['NIVEL_NUM'] = merge['NIVEL_NUM'].fillna(0)
-        depto_col = merge.get('DEPARTAMENTO', merge['COD_DEPTO'].astype(str))
-        if hasattr(depto_col, 'fillna'):
-            depto_col = depto_col.fillna(merge['COD_DEPTO'].astype(str))
+        if 'DEPARTAMENTO' in merge.columns:
+            depto_col = merge['DEPARTAMENTO'].astype(str).replace('nan', '')
+        else:
+            depto_col = merge['COD_DEPTO'].astype(str)
         merge['HOVER_TEXT'] = (
-            depto_col.astype(str) +
+            depto_col +
             "<br>Riesgo: " + merge['NIVEL'].fillna('Sin datos').astype(str) +
             "<br>Casos: " + merge['CASOS_ACT'].fillna(0).astype(int).astype(str) +
             "<br>Tasa: " + merge['TASA'].fillna(0).round(1).astype(str) + " x100k" +
