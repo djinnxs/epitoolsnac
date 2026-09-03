@@ -180,7 +180,27 @@ def _parse_sql(sql, df):
     # --- GROUP BY ---
     if group_clause:
         group_cols = [c.strip() for c in group_clause.split(',')]
-        result = result.groupby(group_cols, as_index=False).size().rename(columns={'size': 'CANTIDAD'})
+        # Detectar funciones de agregación y alias en SELECT
+        select_items = [s.strip() for s in select_part.split(',')]
+        agg_col_name = 'CANTIDAD'
+        agg_src = None
+        for item in select_items:
+            item_upper = item.upper().strip()
+            alias_match = re.match(r'.*\bAS\s+(\w+)', item, re.IGNORECASE)
+            if 'SUM(' in item_upper:
+                col_match = re.search(r'SUM\((\w+)\)', item, re.IGNORECASE)
+                if col_match:
+                    agg_src = col_match.group(1)
+                    agg_col_name = alias_match.group(1) if alias_match else f'SUM({agg_src})'
+            elif 'COUNT(' in item_upper:
+                agg_col_name = alias_match.group(1) if alias_match else 'CANTIDAD'
+
+        if agg_src and agg_src in result.columns:
+            grouped = result.groupby(group_cols, as_index=False)[agg_src].sum()
+            grouped = grouped.rename(columns={agg_src: agg_col_name})
+            result = grouped
+        else:
+            result = result.groupby(group_cols, as_index=False).size().rename(columns={'size': agg_col_name})
 
     # --- SELECT ---
     if is_distinct:

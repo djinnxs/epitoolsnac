@@ -170,7 +170,10 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
     # ── Merge con datos actuales ───────────────────────────────────────────────
     merged = df_actual.merge(cuartiles, on=['DEPARTAMENTO', 'NOMBREEVENTOAGRP'], how='left')
     merged = merged.merge(df_prev, on=['DEPARTAMENTO', 'NOMBREEVENTOAGRP'], how='left')
-    merged['CANTIDAD_PREV'] = merged['CANTIDAD_PREV'].fillna(0)
+    if 'CANTIDAD_PREV' in merged.columns:
+        merged['CANTIDAD_PREV'] = merged['CANTIDAD_PREV'].fillna(0)
+    else:
+        merged['CANTIDAD_PREV'] = 0
 
     # ── Clasificar alertas ────────────────────────────────────────────────────
     def clasificar(row):
