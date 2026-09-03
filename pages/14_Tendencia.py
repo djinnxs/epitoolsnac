@@ -130,20 +130,7 @@ def backtest_walkforward(y, horizon=13, n_rets=3, exog=None):
         test_y = y.iloc[split:split + horizon]
         if len(test_y) < horizon:
             continue
-        # SARIMA
-        try:
-            exog_train = exog_s.iloc[:split].values if exog_s is not None else None
-            res = SARIMAX(train_y.values, order=(1,1,1), seasonal_order=(1,1,1,52),
-                          exog=exog_train).fit(disp=False)
-            pred = np.maximum(res.forecast(steps=horizon), 0)
-            puntos.append({
-                'model': 'SARIMA', 'real': test_y.values, 'pred': pred,
-                'mape': metricas_error(test_y.values, pred)[0],
-                'rmse': metricas_error(test_y.values, pred)[1],
-            })
-        except Exception:
-            pass
-        # ETS
+        # ETS (rápido; SARIMA se omite del backtest porque su fit estacional es demasiado lento en Streamlit Cloud)
         try:
             res_ets = ExponentialSmoothing(train_y.values, seasonal_periods=52,
                                            trend='add', seasonal='add').fit()
@@ -156,7 +143,7 @@ def backtest_walkforward(y, horizon=13, n_rets=3, exog=None):
         except Exception:
             pass
     # Consolidar por modelo
-    for m in {'SARIMA', 'ETS'}:
+    for m in {'ETS'}:
         subset = [p for p in puntos if p['model'] == m]
         if subset:
             reales = np.concatenate([p['real'] for p in subset])
@@ -254,16 +241,6 @@ exog_temp = None
 if temp_semanal is not None and not temp_semanal.empty:
     temp_merged = df_ts[['fecha']].merge(temp_semanal, on='fecha', how='left')['TEMP_MEDIA']
     exog_temp = temp_merged.ffill().bfill().values
-
-# Backtest (walk-forward) — disponible para SARIMA/ETS (cacheado para no refitear en cada interacción)
-# cache_data requiere argumentos hashables → pasar tuplas y reemplazar NaN en exog.
-_exog_bt = None
-if exog_temp is not None:
-    _exog_bt = tuple(0.0 if (x is None or (isinstance(x, float) and np.isnan(x))) else float(x) for x in exog_temp)
-resultados_backtest = backtest_walkforward_cached(
-    tuple(float(x) for x in df_ts['CANTIDAD'].values), horizon=13, n_rets=3,
-    exog=_exog_bt
-)
 
 # TABS
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Serie & Descomposición", "🔍 Diagnóstico", "🎯 Predicción", "⚖️ Comparación (Backtest)"])
@@ -405,18 +382,30 @@ with tab3:
 
 with tab4:
     st.subheader("Comparación de Modelos (Backtest Walk-Forward)")
-    if resultados_backtest:
-        df_cmp = pd.DataFrame([
-            {'Modelo': k, 'MAPE (%)': round(v['mape'], 2), 'RMSE': round(v['rmse'], 2)}
-            for k, v in resultados_backtest.items()
-        ])
-        mejor_mape = df_cmp.loc[df_cmp['MAPE (%)'].idxmin()]['Modelo'] if not df_cmp.empty else '—'
-        st.success(f"🏆 El modelo con menor error (MAPE) en holdout fue: **{mejor_mape}**")
-        st.dataframe(df_cmp, use_container_width=True)
-        st.caption("El backtest retiene las últimas semanas y predice hacia adelante (walk-forward). "
-                   "Menor MAPE/RMSE = mejor precisión. SARIMA + Clima usa temperatura si está disponible.")
-    else:
+    st.caption("El backtest retiene las últimas semanas del histórico y predice hacia adelante (walk-forward). "
+               "Menor MAPE/RMSE = mejor precisión.")
+    if len(df_ts) < 52:
         st.info("No hay datos suficientes para ejecutar el backtest (se necesitan ~52 semanas de histórico).")
+    else:
+        if st.button("▶️ Ejecutar backtest", key="btn_backtest"):
+            with st.spinner("Ejecutando backtest (solo ETS, rápida)..."):
+                _exog_bt = None
+                if exog_temp is not None:
+                    _exog_bt = tuple(0.0 if (x is None or (isinstance(x, float) and np.isnan(x))) else float(x) for x in exog_temp)
+                resultados_backtest = backtest_walkforward_cached(
+                    tuple(float(x) for x in df_ts['CANTIDAD'].values), horizon=13, n_rets=3,
+                    exog=_exog_bt
+                )
+            if resultados_backtest:
+                df_cmp = pd.DataFrame([
+                    {'Modelo': k, 'MAPE (%)': round(v['mape'], 2), 'RMSE': round(v['rmse'], 2)}
+                    for k, v in resultados_backtest.items()
+                ])
+                mejor_mape = df_cmp.loc[df_cmp['MAPE (%)'].idxmin()]['Modelo'] if not df_cmp.empty else '—'
+                st.success(f"🏆 El modelo con menor error (MAPE) en holdout fue: **{mejor_mape}**")
+                st.dataframe(df_cmp, use_container_width=True)
+            else:
+                st.warning("El backtest no pudo converger para ningún modelo con estos datos.")
 
 st.markdown("---")
 st.markdown("<div style='text-align: center; color: gray;'>📅 Semanas Epidemiológicas | 🌎 Hemisferio Sur</div>", unsafe_allow_html=True)
