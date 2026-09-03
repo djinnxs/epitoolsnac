@@ -289,6 +289,54 @@ def get_distinct_departments():
         pass
     return []
 
+# --- BASE NOMINAL (Consultas IA) ---
+
+def get_nominal_parquet_path(filename='base_nominal.parquet'):
+    """Ruta al parquet nominal de consultas IA (evento = EVENTO)."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_dir, 'data', filename)
+
+def check_nominal_parquet_exists(filename='base_nominal.parquet'):
+    path = get_nominal_parquet_path(filename)
+    if not os.path.exists(path):
+        st.error(f"⚠️ No se encontró el archivo de datos nominal (`data/{filename}`).")
+        st.info("La página de Consultas IA necesita el parquet nominal (evento = EVENTO).")
+        st.stop()
+    return path
+
+@st.cache_data(ttl=3600)
+def get_nominal_distinct_events():
+    try:
+        path = get_nominal_parquet_path().replace('\\', '/')
+        if os.path.exists(path):
+            df = pd.read_parquet(path)
+            return sorted(df['EVENTO'].dropna().unique().tolist())
+    except Exception:
+        pass
+    return []
+
+@st.cache_data(ttl=3600)
+def get_nominal_distinct_provinces():
+    try:
+        path = get_nominal_parquet_path().replace('\\', '/')
+        if os.path.exists(path):
+            df = pd.read_parquet(path)
+            return sorted(df['PROVINCIA'].dropna().unique().tolist())
+    except Exception:
+        pass
+    return []
+
+@st.cache_data(ttl=3600)
+def get_nominal_distinct_departments():
+    try:
+        path = get_nominal_parquet_path().replace('\\', '/')
+        if os.path.exists(path):
+            df = pd.read_parquet(path)
+            return sorted(df['DEPARTAMENTO'].dropna().unique().tolist())
+    except Exception:
+        pass
+    return []
+
 @st.cache_data(ttl=3600)
 def load_population_province(year: int | None = None):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

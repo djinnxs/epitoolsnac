@@ -6,7 +6,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils.common import get_parquet_path, check_parquet_exists, format_number, style_argentina
+from utils.common import format_number, style_argentina, check_nominal_parquet_exists
 from utils.query_builder import NaturalLanguageQueryBuilder
 import os
 
@@ -110,8 +110,8 @@ if 'query_result' not in st.session_state:
 if 'query_params' not in st.session_state:
     st.session_state.query_params = None
 
-# Verificar que existe el archivo parquet
-parquet_path = check_parquet_exists('base_semanal.parquet')
+# Verificar que existe el archivo parquet nominal (base de Consultas IA)
+parquet_path = check_nominal_parquet_exists()
 
 # Procesar la consulta cuando se presiona el botón
 if consultar_btn and query_text.strip():
@@ -163,7 +163,7 @@ if st.session_state.query_result is not None and st.session_state.query_params i
             # Métricas rápidas
             total_casos = df_result['CANTIDAD'].sum()
             num_provincias = df_result['PROVINCIA'].nunique()
-            num_eventos = df_result['NOMBREEVENTOAGRP'].nunique()
+            num_eventos = df_result['EVENTO'].nunique()
 
             metric_col1, metric_col2, metric_col3 = st.columns(3)
             with metric_col1:
@@ -231,10 +231,10 @@ if st.session_state.query_result is not None and st.session_state.query_params i
                 st.plotly_chart(fig, width="stretch")
 
             elif viz_type == "Barras por Evento":
-                df_evento = df_result.groupby('NOMBREEVENTOAGRP', as_index=False)['CANTIDAD'].sum()
+                df_evento = df_result.groupby('EVENTO', as_index=False)['CANTIDAD'].sum()
                 fig = px.bar(
                     df_evento.sort_values('CANTIDAD', ascending=False),
-                    x='NOMBREEVENTOAGRP',
+                    x='EVENTO',
                     y='CANTIDAD',
                     title='Casos por Evento',
                     color='CANTIDAD',

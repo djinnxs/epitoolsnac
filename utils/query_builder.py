@@ -4,12 +4,24 @@ import unicodedata
 import pandas as pd
 from typing import Dict, Tuple
 import streamlit as st
-from utils.common import get_distinct_departments, get_distinct_provinces
+from utils.common import (
+    get_nominal_distinct_departments,
+    get_nominal_distinct_provinces,
+    get_nominal_distinct_events,
+)
+
+# Eventos agrupados (epitools) que NO existen en la base nominal (epitoolsnac).
+# Se detectan para mostrar un mensaje claro en lugar de devolver vacío.
+GRUPO_EVENTOS_NO_NOMINALES = [
+    'DIARREA', 'ETI', 'IRAG', 'BRONQUIOLITIS', 'INFLUENZA', 'NEUMONIA',
+    'DENGUE', 'COVID', 'SARAMPION', 'VARICELA',
+]
 
 class NaturalLanguageQueryBuilder:
     """
     Sistema basado en reglas para convertir consultas en lenguaje natural a SQL.
-    Usa valores nacionales extraídos del parquet y alias de departamentos y provincias.
+    Consulta la base nominal (base_nominal.parquet) donde el evento se llama EVENTO
+    y solo se filtra por provincia + evento (+ año opcional).
     """
 
     @staticmethod
@@ -20,9 +32,10 @@ class NaturalLanguageQueryBuilder:
         return re.sub(r'\s+', ' ', text).strip()
 
     def __init__(self):
-        # Cargar valores nacionales a partir del parquet
-        self.provincias_validas = [p for p in get_distinct_provinces() if isinstance(p, str)]
-        self.departamentos_validos = [d for d in get_distinct_departments() if isinstance(d, str)]
+        # Cargar valores nominales a partir del parquet base_nominal.parquet
+        self.provincias_validas = [p for p in get_nominal_distinct_provinces() if isinstance(p, str)]
+        self.departamentos_validos = [d for d in get_nominal_distinct_departments() if isinstance(d, str)]
+        self.eventos_validos = [e for e in get_nominal_distinct_events() if isinstance(e, str)]
 
         self.provincias_aliases = {self.normalize_text(p): p for p in self.provincias_validas}
         self.departamentos_aliases = {self.normalize_text(d): d for d in self.departamentos_validos}
@@ -107,29 +120,43 @@ class NaturalLanguageQueryBuilder:
                           'Lanús', 'Pilar', 'Escobar', 'La Matanza'],
         }
 
-        self.eventos_keywords = {
-            'bronquiolitis': 'BRONQUIOLITIS',
-            'bronquilitis': 'BRONQUIOLITIS',
-            'bronquioliti': 'BRONQUIOLITIS',
-            'bronquiliti': 'BRONQUIOLITIS',
-            'bronco': 'BRONQUIOLITIS',
-            'diarrea': 'DIARREA',
-            'diarreas': 'DIARREA',
-            'influenza': 'INFLUENZA',
-            'gripe': 'INFLUENZA',
-            'eti': 'ETI',
-            'irag': 'IRAG',
-            'infeccion respiratoria': 'IRAG',
-            'respiratoria aguda': 'IRAG',
-            'neumonia': 'NEUMONIA',
-            'neumonía': 'NEUMONIA',
-            'pulmonia': 'NEUMONIA',
-            'dengue': 'DENGUE',
-            'covid': 'COVID',
-            'coronavirus': 'COVID',
-            'sarampion': 'SARAMPION',
-            'varicela': 'VARICELA',
+        # Detección de eventos construida dinámicamente a partir de los eventos
+        # REALES de la base nominal (EVENTO). Solo mapea sinónimos que existan.
+        self.eventos_keywords = {}
+        for ev in self.eventos_validos:
+            self.eventos_keywords[self.normalize_text(ev)] = ev
+            # Sinónimo corto: primera palabra significativa (evita 'accidente', 'intento', etc.)
+            head = self.normalize_text(ev).split()[0] if self.normalize_text(ev).split() else ''
+            if head and len(head) >= 5 and head not in ('accidente', 'intento', 'chagas', 'brucelosis', 'ofidismo', 'araneismo', 'pandrogo', 'poliomielitis', 'enfermedad', 'intoxicacion'):
+                self.eventos_keywords.setdefault(head, ev)
+
+        # Sinónimos comunes solo si el evento destino existe en la base nominal
+        sinonimos_comunes = {
+            'sifilis': 'SIFILIS',
+            'tuberculosis': 'TUBERCULOSIS',
+            'tb': 'TUBERCULOSIS',
+            'hepatitis': 'HEPATITIS B',
+            'hepatitis b': 'HEPATITIS B',
+            'hepatitis a': 'HEPATITIS A',
+            'hepatitis c': 'HEPATITIS C',
+            'mpox': 'VIRUELA SIMICA (MPOX)',
+            'viruela simica': 'VIRUELA SIMICA (MPOX)',
+            'sarampion': 'ENFERMEDAD FEBRIL EXANTEMATICA-EFE (SARAMPION)',
+            'triquinosis': 'TRICHINELLOSIS (TRIQUINOSIS)',
+            'chagas': 'CHAGAS AGUDO CONGENITO',
+            'leptospirosis': 'LEPTOSPIROSIS',
+            'psitacosis': 'PSITACOSIS',
+            'hantavirus': 'HANTAVIROSIS',
+            'hantavirosis': 'HANTAVIROSIS',
         }
+        for kw, destino in sinonimos_comunes.items():
+            kw_norm = self.normalize_text(kw)
+            destino_norm = self.normalize_text(destino)
+            if any(destino_norm in self.normalize_text(ev) for ev in self.eventos_validos):
+                self.eventos_keywords[kw_norm] = destino
+
+        # Detección de eventos agrupados que NO existen en la base nominal
+        self.grupos_no_nominales = GRUPO_EVENTOS_NO_NOMINALES
 
     def parse_query(self, query_text: str) -> Dict:
         """
@@ -171,6 +198,12 @@ class NaturalLanguageQueryBuilder:
             if keyword in text_norm and evento not in result['eventos']:
                 result['eventos'].append(evento)
 
+        # Detectar eventos agrupados que NO están en la base nominal
+        text_norm_upper = text_norm.upper()
+        grupos_detect = [g for g in self.grupos_no_nominales if g in text_norm_upper]
+        if grupos_detect:
+            result['grupos_no_nominales'] = grupos_detect
+
         # Detectar años
         años_match = re.findall(r'\b(20[0-4][0-9])\b', query_text)
         if años_match:
@@ -204,7 +237,7 @@ class NaturalLanguageQueryBuilder:
         is_province_level = bool(params.get('provincias')) and not bool(params.get('departamentos'))
 
         select_cols = "PROVINCIA,\n            DEPARTAMENTO" if not is_province_level else "PROVINCIA"
-        group_cols = "PROVINCIA, DEPARTAMENTO, ANIO, SEMANA, NOMBREEVENTOAGRP" if not is_province_level else "PROVINCIA, ANIO, SEMANA, NOMBREEVENTOAGRP"
+        group_cols = "PROVINCIA, DEPARTAMENTO, ANIO, SEMANA, EVENTO" if not is_province_level else "PROVINCIA, ANIO, SEMANA, EVENTO"
         order_cols = "PROVINCIA, ANIO, SEMANA" if is_province_level else "PROVINCIA, DEPARTAMENTO, ANIO, SEMANA"
 
         query = f"""
@@ -212,7 +245,7 @@ class NaturalLanguageQueryBuilder:
             {select_cols},
             ANIO,
             SEMANA,
-            NOMBREEVENTOAGRP,
+            EVENTO,
             SUM(CANTIDAD) AS CANTIDAD
         FROM '{parquet_path}'
         WHERE 1=1
@@ -226,7 +259,7 @@ class NaturalLanguageQueryBuilder:
             query += f"\n    AND UPPER(PROVINCIA) IN ('{provincias_str}')"
 
         if params.get('eventos'):
-            eventos_conditions = [f"UPPER(NOMBREEVENTOAGRP) LIKE UPPER('%{evento}%')" for evento in params['eventos']]
+            eventos_conditions = [f"UPPER(EVENTO) LIKE UPPER('%{evento}%')" for evento in params['eventos']]
             query += f"\n    AND ({' OR '.join(eventos_conditions)})"
 
         if params.get('años'):
@@ -261,7 +294,28 @@ class NaturalLanguageQueryBuilder:
                 df = df.head(1000)
 
             params['sql_query'] = sql_query
-            params['message'] = f"✅ Encontrados {len(df)} registros"
+
+            # Si se pidió un evento agrupado (DIARREA/ETI/IRAG...) que no existe en la base
+            # nominal y no se detectó ningún evento real, devolvemos vacío con mensaje claro
+            # en lugar de mostrar todas las enfermedades de la provincia.
+            grupos = params.get('grupos_no_nominales', [])
+            if grupos and not params.get('eventos'):
+                df = pd.DataFrame()
+
+            # Mensaje base
+            if len(df) == 0:
+                mensaje = '⚠️ No se encontraron registros con los parámetros indicados.'
+            else:
+                mensaje = f'✅ Encontrados {len(df)} registros'
+
+            # Aviso de eventos agrupados no presentes en la base nominal
+            if grupos:
+                aviso = ('Los eventos agrupados (' + ', '.join(grupos) +
+                         ') no están en la base nominal (epitoolsnac). '
+                         'Esta base registra enfermedades nominadas (SIFILIS, HEPATITIS, TUBERCULOSIS, etc.).')
+                mensaje = f"{mensaje} — {aviso}"
+
+            params['message'] = mensaje
             return df, params
         except Exception as e:
             params['success'] = False
@@ -277,18 +331,18 @@ class NaturalLanguageQueryBuilder:
         try:
             if HAS_DUCKDB:
                 with duckdb.connect() as con:
-                    eventos = con.execute(f"SELECT DISTINCT NOMBREEVENTOAGRP FROM '{parquet_path}' ORDER BY NOMBREEVENTOAGRP").df()
+                    eventos = con.execute(f"SELECT DISTINCT EVENTO FROM '{parquet_path}' ORDER BY EVENTO").df()
                     años = con.execute(f"SELECT DISTINCT ANIO FROM '{parquet_path}' ORDER BY ANIO DESC").df()
                     provincias = con.execute(f"SELECT DISTINCT PROVINCIA FROM '{parquet_path}' ORDER BY PROVINCIA").df()
                     return {
-                        'eventos': eventos['NOMBREEVENTOAGRP'].tolist(),
+                        'eventos': eventos['EVENTO'].tolist(),
                         'años': años['ANIO'].tolist(),
                         'provincias': provincias['PROVINCIA'].tolist()
                     }
             else:
                 df = pd.read_parquet(parquet_path)
                 return {
-                    'eventos': sorted(df['NOMBREEVENTOAGRP'].dropna().unique().tolist()),
+                    'eventos': sorted(df['EVENTO'].dropna().unique().tolist()),
                     'años': sorted(df['ANIO'].dropna().unique().tolist(), reverse=True),
                     'provincias': sorted(df['PROVINCIA'].dropna().unique().tolist())
                 }
