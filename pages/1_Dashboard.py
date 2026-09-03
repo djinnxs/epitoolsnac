@@ -47,6 +47,8 @@ def load_data():
     df["NOMBREEVENTOAGRP"] = df["NOMBREEVENTOAGRP"].astype(str)
     
     # Normalización de textos para filtros
+    if 'PROVINCIA' in df.columns:
+        df['PROVINCIA'] = df['PROVINCIA'].astype(str).str.title()
     if 'DEPARTAMENTO' in df.columns:
         df['DEPARTAMENTO'] = df['DEPARTAMENTO'].astype(str).str.title()
     if 'LOCALIDAD' in df.columns:
@@ -131,6 +133,7 @@ filtered_df = filter_dataframe(df, date1, date2, ANIO, EVENTO, PROVINCIA, GRUPO)
 
 # 1. Gráfico por Provincia
 PROVINCIA_df = filtered_df.groupby("PROVINCIA", as_index=False)["CANTIDAD"].sum().sort_values("CANTIDAD", ascending=False)
+PROVINCIA_df["PROVINCIA"] = PROVINCIA_df["PROVINCIA"].astype(str)
 
 @st.cache_data
 def create_provincia_chart(df, col):
@@ -216,6 +219,8 @@ if not filtered_df.empty:
 @st.cache_data
 def create_treemap(df, col):
     df_tree = df.groupby(["PROVINCIA", "DEPARTAMENTO", "NOMBREEVENTOAGRP"], as_index=False)["CANTIDAD"].sum()
+    df_tree["PROVINCIA"] = df_tree["PROVINCIA"].astype(str)
+    df_tree["DEPARTAMENTO"] = df_tree["DEPARTAMENTO"].astype(str)
     
     if col == "Tasas":
         df_tree = pd.merge(df_tree, PROVINCIA_df[['PROVINCIA', 'poblacion']], on='PROVINCIA', how='left')
