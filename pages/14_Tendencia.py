@@ -142,8 +142,25 @@ def backtest_walkforward(y, horizon=13, n_rets=3, exog=None):
             })
         except Exception:
             pass
+        # Prophet (rápido) — solo si está disponible
+        if PROPHET_AVAILABLE:
+            try:
+                train_idx = train_y.index if hasattr(train_y, 'index') else range(len(train_y))
+                fechas = pd.date_range("2020-01-01", periods=len(y), freq="W-MON")
+                df_prop = pd.DataFrame({'ds': fechas[train_y.index], 'y': train_y.values})
+                m_prop = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False).fit(df_prop)
+                futuro = pd.DataFrame({'ds': fechas[test_y.index]})
+                fc_prop = m_prop.predict(futuro)
+                pred_prop = np.maximum(fc_prop['yhat'].values, 0)
+                puntos.append({
+                    'model': 'Prophet', 'real': test_y.values, 'pred': pred_prop,
+                    'mape': metricas_error(test_y.values, pred_prop)[0],
+                    'rmse': metricas_error(test_y.values, pred_prop)[1],
+                })
+            except Exception:
+                pass
     # Consolidar por modelo
-    for m in {'ETS'}:
+    for m in {'ETS', 'Prophet'}:
         subset = [p for p in puntos if p['model'] == m]
         if subset:
             reales = np.concatenate([p['real'] for p in subset])
