@@ -3,7 +3,11 @@ import os
 import streamlit as st
 import pandas as pd
 import io
-import duckdb
+try:
+    import duckdb
+    HAS_DUCKDB = True
+except ImportError:
+    HAS_DUCKDB = False
 from dotenv import load_dotenv
 import locale
 
@@ -68,19 +72,102 @@ def check_parquet_exists(filename='base_semanal.parquet'):
         st.stop()
     return path
 
-def query_duckdb(query, filename='base_semanal.parquet'):
-    """
-    Ejecuta consulta SQL sobre Parquet usando DuckDB.
-    """
+def _read_parquet(filename='base_semanal.parquet'):
     path = check_parquet_exists(filename)
-    # Sanitizar ruta para DuckDB (Linux/Cloud usa forward slashes)
+    return pd.read_parquet(path)
+
+def _parse_sql(sql, df):
+    """Traduce SQL básico a operaciones pandas."""
+    q = sql.strip().rstrip(';')
+    q_upper = q.upper()
+
+    # SELECT ... DISTINCT
+    if 'DISTINCT' in q_upper:
+        # Extraer columnas: SELECT DISTINCT col1, col2
+        after_select = q_upper.split('DISTINCT')[1]
+        cols_part = after_select.split('FROM')[0].strip()
+        cols = [c.strip() for c in cols_part.split(',')]
+
+        # WHERE
+        if 'WHERE' in q_upper:
+            where_part = q.split('WHERE')[1]
+            if 'ORDER BY' in where_part:
+                where_part = where_part.split('ORDER BY')[0]
+            df = df.query(where_part.strip())
+
+        result = df[cols].drop_duplicates()
+        # ORDER BY
+        if 'ORDER BY' in q_upper:
+            order_part = q.split('ORDER BY')[1].strip()
+            desc = 'DESC' in order_part.upper()
+            order_col = order_part.replace('DESC', '').replace('ASC', '').strip()
+            result = result.sort_values(order_col, ascending=not desc)
+        return result
+
+    # SELECT ... GROUP BY
+    if 'GROUP BY' in q_upper:
+        after_select = q_upper.split('FROM')[0].replace('SELECT', '').strip()
+        cols = [c.strip() for c in after_select.split(',')]
+
+        # WHERE
+        if 'WHERE' in q_upper:
+            where_part = q.split('WHERE')[1]
+            for keyword in ['GROUP BY', 'ORDER BY', 'HAVING']:
+                if keyword in where_part.upper():
+                    where_part = where_part.split(keyword)[0]
+            df = df.query(where_part.strip())
+
+        result = df.groupby(cols, as_index=False).size().rename(columns={'size': 'CANTIDAD'})
+
+        # ORDER BY
+        if 'ORDER BY' in q_upper:
+            order_part = q.split('ORDER BY')[1].strip()
+            desc = 'DESC' in order_part.upper()
+            order_col = order_part.replace('DESC', '').replace('ASC', '').strip()
+            result = result.sort_values(order_col, ascending=not desc)
+        return result
+
+    # SELECT simples
+    after_select = q_upper.split('FROM')[0].replace('SELECT', '').strip()
+    cols = [c.strip() for c in after_select.split(',')]
+
+    # WHERE
+    if 'WHERE' in q_upper:
+        where_part = q.split('WHERE')[1]
+        for keyword in ['ORDER BY', 'LIMIT', 'GROUP BY']:
+            if keyword in where_part.upper():
+                where_part = where_part.split(keyword)[0]
+        df = df.query(where_part.strip())
+
+    result = df[cols] if cols != ['*'] else df
+
+    # ORDER BY
+    if 'ORDER BY' in q_upper:
+        order_part = q.split('ORDER BY')[1].strip()
+        desc = 'DESC' in order_part.upper()
+        order_col = order_part.replace('DESC', '').replace('ASC', '').strip()
+        result = result.sort_values(order_col, ascending=not desc)
+
+    # LIMIT
+    if 'LIMIT' in q_upper:
+        limit_val = int(q.split('LIMIT')[1].strip())
+        result = result.head(limit_val)
+
+    return result
+
+def query_duckdb(query, filename='base_semanal.parquet'):
+    path = check_parquet_exists(filename)
     path = path.replace('\\', '/')
+    formatted_query = query.replace('{parquet}', f"'{path}'")
     try:
-        formatted_query = query.replace('{parquet}', f"'{path}'")
-        with duckdb.connect() as con:
-            return con.execute(formatted_query).df()
+        if HAS_DUCKDB:
+            with duckdb.connect() as con:
+                return con.execute(formatted_query).df()
+        else:
+            df = pd.read_parquet(path)
+            return _parse_sql(formatted_query, df)
     except Exception as e:
-        st.error(f"Error consultando DuckDB: {e}")
+        st.error(f"Error consultando datos: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -88,12 +175,10 @@ def get_distinct_years():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            query = f"SELECT DISTINCT ANIO FROM '{path}' WHERE ANIO IS NOT NULL ORDER BY ANIO DESC"
-            with duckdb.connect() as con:
-                df = con.execute(query).df()
-            return df['ANIO'].astype(int).tolist()
-    except Exception as e:
-        st.warning(f"No se pudieron cargar años del archivo local.")
+            df = pd.read_parquet(path)
+            return sorted(df['ANIO'].dropna().astype(int).unique().tolist(), reverse=True)
+    except Exception:
+        pass
     return []
 
 @st.cache_data(ttl=3600)
@@ -101,12 +186,10 @@ def get_distinct_events():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            query = f"SELECT DISTINCT NOMBREEVENTOAGRP FROM '{path}' WHERE NOMBREEVENTOAGRP IS NOT NULL ORDER BY NOMBREEVENTOAGRP"
-            with duckdb.connect() as con:
-                df = con.execute(query).df()
-            return df['NOMBREEVENTOAGRP'].tolist()
-    except Exception as e:
-        st.warning("No se pudieron cargar eventos del archivo local.")
+            df = pd.read_parquet(path)
+            return sorted(df['NOMBREEVENTOAGRP'].dropna().unique().tolist())
+    except Exception:
+        pass
     return []
 
 @st.cache_data(ttl=3600)
@@ -114,11 +197,9 @@ def get_distinct_provinces():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            query = f"SELECT DISTINCT PROVINCIA FROM '{path}' WHERE PROVINCIA IS NOT NULL ORDER BY PROVINCIA"
-            with duckdb.connect() as con:
-                df = con.execute(query).df()
-            return df['PROVINCIA'].tolist()
-    except Exception as e:
+            df = pd.read_parquet(path)
+            return sorted(df['PROVINCIA'].dropna().unique().tolist())
+    except Exception:
         pass
     return []
 
@@ -127,11 +208,9 @@ def get_distinct_departments():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            query = f"SELECT DISTINCT DEPARTAMENTO FROM '{path}' WHERE DEPARTAMENTO IS NOT NULL ORDER BY DEPARTAMENTO"
-            with duckdb.connect() as con:
-                df = con.execute(query).df()
-            return df['DEPARTAMENTO'].tolist()
-    except Exception as e:
+            df = pd.read_parquet(path)
+            return sorted(df['DEPARTAMENTO'].dropna().unique().tolist())
+    except Exception:
         pass
     return []
 

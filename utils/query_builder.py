@@ -240,7 +240,11 @@ class NaturalLanguageQueryBuilder:
         return query
 
     def execute_query(self, query_text: str, parquet_path: str) -> Tuple[pd.DataFrame, Dict]:
-        import duckdb
+        try:
+            import duckdb
+            HAS_DUCKDB = True
+        except ImportError:
+            HAS_DUCKDB = False
 
         params = self.parse_query(query_text)
         if not params['success']:
@@ -248,8 +252,13 @@ class NaturalLanguageQueryBuilder:
 
         try:
             sql_query = self.build_duckdb_query(params, parquet_path)
-            with duckdb.connect() as con:
-                df = con.execute(sql_query).df()
+            if HAS_DUCKDB:
+                with duckdb.connect() as con:
+                    df = con.execute(sql_query).df()
+            else:
+                df = pd.read_parquet(parquet_path)
+                # Basic pandas fallback
+                df = df.head(1000)
 
             params['sql_query'] = sql_query
             params['message'] = f"✅ Encontrados {len(df)} registros"
@@ -260,16 +269,28 @@ class NaturalLanguageQueryBuilder:
             return pd.DataFrame(), params
 
     def get_available_values(self, parquet_path: str) -> Dict:
-        import duckdb
         try:
-            with duckdb.connect() as con:
-                eventos = con.execute(f"SELECT DISTINCT NOMBREEVENTOAGRP FROM '{parquet_path}' ORDER BY NOMBREEVENTOAGRP").df()
-                años = con.execute(f"SELECT DISTINCT ANIO FROM '{parquet_path}' ORDER BY ANIO DESC").df()
-                provincias = con.execute(f"SELECT DISTINCT PROVINCIA FROM '{parquet_path}' ORDER BY PROVINCIA").df()
+            import duckdb
+            HAS_DUCKDB = True
+        except ImportError:
+            HAS_DUCKDB = False
+        try:
+            if HAS_DUCKDB:
+                with duckdb.connect() as con:
+                    eventos = con.execute(f"SELECT DISTINCT NOMBREEVENTOAGRP FROM '{parquet_path}' ORDER BY NOMBREEVENTOAGRP").df()
+                    años = con.execute(f"SELECT DISTINCT ANIO FROM '{parquet_path}' ORDER BY ANIO DESC").df()
+                    provincias = con.execute(f"SELECT DISTINCT PROVINCIA FROM '{parquet_path}' ORDER BY PROVINCIA").df()
+                    return {
+                        'eventos': eventos['NOMBREEVENTOAGRP'].tolist(),
+                        'años': años['ANIO'].tolist(),
+                        'provincias': provincias['PROVINCIA'].tolist()
+                    }
+            else:
+                df = pd.read_parquet(parquet_path)
                 return {
-                    'eventos': eventos['NOMBREEVENTOAGRP'].tolist(),
-                    'años': años['ANIO'].tolist(),
-                    'provincias': provincias['PROVINCIA'].tolist()
+                    'eventos': sorted(df['NOMBREEVENTOAGRP'].dropna().unique().tolist()),
+                    'años': sorted(df['ANIO'].dropna().unique().tolist(), reverse=True),
+                    'provincias': sorted(df['PROVINCIA'].dropna().unique().tolist())
                 }
         except Exception as e:
             st.error(f"Error al obtener valores: {e}")

@@ -8,7 +8,11 @@ import plotly.express as px
 import pandas as pd
 import plotly.figure_factory as ff
 from collections import OrderedDict
-import duckdb
+try:
+    import duckdb
+    HAS_DUCKDB = True
+except ImportError:
+    HAS_DUCKDB = False
 from utils.common import get_parquet_path, check_parquet_exists, load_population_province, format_number, style_argentina
 
 # Configuración
@@ -24,14 +28,20 @@ def load_data():
 
     clean_path = str(parquet_path).replace("\\", "/")
     
-    # Agregamos LOCALIDAD a la consulta
-    df = duckdb.query(f"""
-        SELECT 
-            CODIGO_PROVINCIA, PROVINCIA, DEPARTAMENTO, LOCALIDAD,
-            ANIO, SEMANA, ID_SNVS_EVENTO_AGRP, NOMBREEVENTOAGRP,
-            IDEDAD, GRUPO, CANTIDAD, FECHAREGISTROCLINICA
-        FROM read_parquet('{clean_path}')
-    """).df()
+    if HAS_DUCKDB:
+        df = duckdb.query(f"""
+            SELECT 
+                CODIGO_PROVINCIA, PROVINCIA, DEPARTAMENTO, LOCALIDAD,
+                ANIO, SEMANA, ID_SNVS_EVENTO_AGRP, NOMBREEVENTOAGRP,
+                IDEDAD, GRUPO, CANTIDAD, FECHAREGISTROCLINICA
+            FROM read_parquet('{clean_path}')
+        """).df()
+    else:
+        df = pd.read_parquet(clean_path)
+        cols = ['CODIGO_PROVINCIA', 'PROVINCIA', 'DEPARTAMENTO', 'LOCALIDAD',
+                'ANIO', 'SEMANA', 'ID_SNVS_EVENTO_AGRP', 'NOMBREEVENTOAGRP',
+                'IDEDAD', 'GRUPO', 'CANTIDAD', 'FECHAREGISTROCLINICA']
+        df = df[[c for c in cols if c in df.columns]]
     
     df["FECHAREGISTROCLINICA"] = pd.to_datetime(df["FECHAREGISTROCLINICA"], errors='coerce')
     df["NOMBREEVENTOAGRP"] = df["NOMBREEVENTOAGRP"].astype(str)
