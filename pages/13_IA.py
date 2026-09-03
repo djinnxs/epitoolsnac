@@ -161,9 +161,9 @@ if st.session_state.query_result is not None and st.session_state.query_params i
             st.markdown("### 📊 Resultados")
 
             # Métricas rápidas
-            total_casos = df_result['CANTIDAD'].sum()
-            num_provincias = df_result['PROVINCIA'].nunique()
-            num_eventos = df_result['EVENTO'].nunique()
+            total_casos = df_result['CANTIDAD'].sum() if 'CANTIDAD' in df_result.columns else 0
+            num_provincias = df_result['PROVINCIA'].nunique() if 'PROVINCIA' in df_result.columns else 0
+            num_eventos = df_result['EVENTO'].nunique() if 'EVENTO' in df_result.columns else 0
 
             metric_col1, metric_col2, metric_col3 = st.columns(3)
             with metric_col1:
@@ -231,17 +231,20 @@ if st.session_state.query_result is not None and st.session_state.query_params i
                 st.plotly_chart(fig, width="stretch")
 
             elif viz_type == "Barras por Evento":
-                df_evento = df_result.groupby('EVENTO', as_index=False)['CANTIDAD'].sum()
-                fig = px.bar(
-                    df_evento.sort_values('CANTIDAD', ascending=False),
-                    x='EVENTO',
-                    y='CANTIDAD',
-                    title='Casos por Evento',
-                    color='CANTIDAD',
-                    color_continuous_scale='Oranges'
-                )
-                fig.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig, width="stretch")
+                if 'EVENTO' not in df_result.columns:
+                    st.info("No hay datos de eventos para graficar.")
+                else:
+                    df_evento = df_result.groupby('EVENTO', as_index=False)['CANTIDAD'].sum()
+                    fig = px.bar(
+                        df_evento.sort_values('CANTIDAD', ascending=False),
+                        x='EVENTO',
+                        y='CANTIDAD',
+                        title='Casos por Evento',
+                        color='CANTIDAD',
+                        color_continuous_scale='Oranges'
+                    )
+                    fig.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(fig, width="stretch")
 
             elif viz_type == "Línea de Tiempo":
                 if 'SEMANA' not in df_result.columns:

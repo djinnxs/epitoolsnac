@@ -289,9 +289,24 @@ class NaturalLanguageQueryBuilder:
                 with duckdb.connect() as con:
                     df = con.execute(sql_query).df()
             else:
+                # Fallback: pandas sin duckdb — aplica filtros manualmente
                 df = pd.read_parquet(parquet_path)
-                # Basic pandas fallback
-                df = df.head(1000)
+                if params.get('provincias'):
+                    df = df[df['PROVINCIA'].isin(params['provincias'])]
+                if params.get('departamentos'):
+                    df = df[df['DEPARTAMENTO'].isin(params['departamentos'])]
+                if params.get('eventos'):
+                    mask = pd.Series(False, index=df.index)
+                    for ev in params['eventos']:
+                        mask = mask | df['EVENTO'].str.contains(ev, case=False, na=False)
+                    df = df[mask]
+                if params.get('años'):
+                    df = df[df['ANIO'].isin(params['años'])]
+                group_cols = (['PROVINCIA', 'DEPARTAMENTO', 'ANIO', 'SEMANA', 'EVENTO']
+                              if params.get('departamentos')
+                              else ['PROVINCIA', 'ANIO', 'SEMANA', 'EVENTO'])
+                df = df.groupby(group_cols, as_index=False, observed=True)['CANTIDAD'].sum()
+                df = df.sort_values(group_cols[:-1])
 
             params['sql_query'] = sql_query
 
