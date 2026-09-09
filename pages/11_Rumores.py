@@ -73,50 +73,6 @@ def _enlace_valido(a_tag, base_url):
         return ''
     return urljoin(base_url, href)
 
-def _extraer_article(art, base_url):
-    enlaces = art.css('a[href]')
-    principal = None
-    for a in enlaces:
-        tit = (a.attrib.get('title') or '').strip()
-        txt = _limpiar(a.get_all_text())
-        if tit or len(txt) > 15:
-            principal = a
-            break
-    if principal is None and enlaces:
-        principal = enlaces[0]
-    if principal is None:
-        return None
-    titulo = (principal.attrib.get('title') or '').strip() or _limpiar(principal.get_all_text())
-    if not titulo:
-        for h in art.css('h2, h3'):
-            t = _limpiar(h.get_all_text())
-            if t and len(t) > 8:
-                titulo = t
-                break
-    href = _enlace_valido(principal, base_url)
-    if not titulo or not href:
-        return None
-    contenido = _limpiar(art.get_all_text()) or titulo
-    return titulo, href, contenido
-
-def _extraer_heading(h, base_url):
-    titulo = _limpiar(h.get_all_text())
-    if not titulo or len(titulo) < 8:
-        return None
-    a_in = h.css('a')
-    if a_in:
-        href = _enlace_valido(a_in[0], base_url)
-        if not href:
-            return None
-    else:
-        anc = h.find_ancestor(lambda e: getattr(e, 'tag', '') == 'a')
-        if anc is None:
-            return None
-        href = _enlace_valido(anc, base_url)
-        if not href:
-            return None
-    return titulo, href, titulo
-
 def scrape_diario(diario, keywords):
     url = diario['url']
     nombre = diario['nombre']
@@ -125,36 +81,23 @@ def scrape_diario(diario, keywords):
         if getattr(page, 'status', None) != 200:
             return [], f"{nombre}: HTTP {getattr(page, 'status', '?')}"
 
-        candidatos = []
-        for art in page.css('article'):
-            c = _extraer_article(art, url)
-            if c:
-                candidatos.append(c)
-        for h in page.css('h2, h3'):
-            if h.find_ancestor(lambda e: getattr(e, 'tag', '') == 'article'):
-                continue
-            c = _extraer_heading(h, url)
-            if c:
-                candidatos.append(c)
-
-        vistos = set()
         noticias = []
         kws = [k.lower() for k in keywords]
-        for titulo, enlace, contenido in candidatos:
-            t = _limpiar(titulo)
-            if not t:
+        for tag in page.css('article, h2, h3'):
+            titulo = _limpiar(tag.get_all_text())
+            if not titulo:
                 continue
-            clave = (t, enlace)
-            if clave in vistos:
-                continue
-            vistos.add(clave)
-            tl = t.lower()
-            match_titulo = any(kw in tl for kw in kws)
-            if not match_titulo:
-                cl = contenido.lower()
-                match_titulo = any(kw in cl for kw in kws)
-            if match_titulo:
-                noticias.append({'diario': nombre, 'titulo': t, 'enlace': enlace})
+
+            if tag.tag == 'article':
+                enlaces = tag.css('a')
+                enlace_tag = enlaces[0] if enlaces else None
+            else:
+                enlace_tag = tag.find_ancestor(lambda e: getattr(e, 'tag', '') == 'a')
+            enlace = _enlace_valido(enlace_tag, url) if enlace_tag else ""
+
+            tl = titulo.lower()
+            if any(kw in tl for kw in kws):
+                noticias.append({'diario': nombre, 'titulo': titulo, 'enlace': enlace})
 
         return noticias, None
     except Exception as e:
