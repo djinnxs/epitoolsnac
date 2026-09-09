@@ -123,12 +123,72 @@ class NaturalLanguageQueryBuilder:
         # Detección de eventos construida dinámicamente a partir de los eventos
         # REALES de la base nominal (EVENTO). Solo mapea sinónimos que existan.
         self.eventos_keywords = {}
+        # Palabras genéricas que no deben usarse como sinónimo de un evento
+        STOP_EVENTO = {
+            'accidente', 'intento', 'envenenamiento', 'exposicion', 'exposición',
+            'personas', 'gestantes', 'embarazadas', 'genero', 'género', 'resistencia',
+            'casos', 'caso', 'resultado', 'mortal', 'por', 'agudo', 'aguda', 'congenito',
+            'congénito', 'cronico', 'crónico', 'menores', 'sospechosos',
+            'exantematica', 'enfermedad', 'febril', 'b', 'c', 'a', 'e', 'spp',
+        }
+        # Sinónimos explícitos manuales (formas naturales -> evento real)
+        SINONIMOS_MANUALES = {
+            'suicidio': 'INTENTO DE SUICIDIO CON RESULTADO MORTAL',
+            'suicidio sin resultado': 'INTENTO DE SUICIDIO SIN RESULTADO MORTAL',
+            'intoxicacion medicamentosa': 'INTOXICACION MEDICAMENTOSA',
+            'veneno': 'INTOXICACION MEDICAMENTOSA',
+            'monoxido': 'INTOXICACION/EXPOSICION POR MONOXIDO DE CARBONO',
+            'monoxido de carbono': 'INTOXICACION/EXPOSICION POR MONOXIDO DE CARBONO',
+            'mordedura de perro': 'LESIONES GRAVES POR MORDEDURA DE PERRO',
+            'perro': 'LESIONES GRAVES POR MORDEDURA DE PERRO',
+            'leptospira': 'LEPTOSPIROSIS',
+            'leptospirosis': 'LEPTOSPIROSIS',
+            'psitacosis': 'PSITACOSIS',
+            'brucelosis': 'BRUCELOSIS',
+            'coqueluche': 'COQUELUCHE',
+            'tos convulsa': 'COQUELUCHE',
+            'cisticercosis': 'CISTICERCOSIS',
+            'triquinosis': 'TRICHINELLOSIS (TRIQUINOSIS)',
+            'triquinelosis': 'TRIQUINELOSIS',
+            'legionelosis': 'LEGIONELOSIS',
+            'hantavirus': 'HANTAVIROSIS',
+            'hantavirosis': 'HANTAVIROSIS',
+            'alacranes': 'ALACRANISMO',
+            'alacranismo': 'ALACRANISMO',
+            'escorpion': 'ALACRANISMO',
+            'escorpión': 'ALACRANISMO',
+            'araneismo': 'ARANEISMO-ENVENENAMIENTO POR LATRODECTUS (LATRODECTISMO)',
+            'mordedura de araña': 'ARANEISMO-ENVENENAMIENTO POR LATRODECTUS (LATRODECTISMO)',
+            'latrodectus': 'ARANEISMO-ENVENENAMIENTO POR LATRODECTUS (LATRODECTISMO)',
+            'loxosceles': 'ARANEISMO-ENVENENAMIENTO POR LOXOSCELES (LOXOSCELISMO)',
+            'phoneutria': 'ARANEISMO-ENVENENAMIENTO POR PHONEUTRIA (FONEUTRISMO O CTENISMO)',
+            'ofidismo': 'OFIDISMO-GENERO BOTHROPS (YARARA)',
+            'mordedura de serpiente': 'OFIDISMO-GENERO BOTHROPS (YARARA)',
+            'yarara': 'OFIDISMO-GENERO BOTHROPS (YARARA)',
+            'cascabel': 'OFIDISMO-GENERO CROTALUS (CASCABEL, MBOI-CHINI)',
+            'coral': 'OFIDISMO-GENERO MICRURUS (CORAL)',
+            'meningoencefalitis': 'MENINGOENCEFALITIS',
+            'meningitis': 'MENINGOENCEFALITIS',
+            'leptospirosis': 'LEPTOSPIROSIS',
+            'rabia': 'RABIA ANIMAL',
+            'muerde perro': 'LESIONES GRAVES POR MORDEDURA DE PERRO',
+        }
+        # 1) Sinónimos por coincidencia del nombre Normalizado completo
         for ev in self.eventos_validos:
-            self.eventos_keywords[self.normalize_text(ev)] = ev
-            # Sinónimo corto: primera palabra significativa (evita 'accidente', 'intento', etc.)
-            head = self.normalize_text(ev).split()[0] if self.normalize_text(ev).split() else ''
-            if head and len(head) >= 5 and head not in ('accidente', 'intento', 'chagas', 'brucelosis', 'ofidismo', 'araneismo', 'pandrogo', 'poliomielitis', 'enfermedad', 'intoxicacion'):
-                self.eventos_keywords.setdefault(head, ev)
+            self.eventos_keywords.setdefault(self.normalize_text(ev), ev)
+        # 2) Sinónimos por cada palabra significativa interna del nombre del evento
+        #    (ej. "suicidio" se encuentra dentro de "INTENTO DE SUICIDIO ...")
+        for ev in self.eventos_validos:
+            tokens = self.normalize_text(ev).replace('(', ' ').replace(')', ' ').split()
+            for t in tokens:
+                if len(t) >= 5 and t not in STOP_EVENTO:
+                    self.eventos_keywords.setdefault(t, ev)
+        # 3) Sinónimos manuales explícitos (solo si el destino existe)
+        for kw, destino in SINONIMOS_MANUALES.items():
+            kw_norm = self.normalize_text(kw)
+            destino_norm = self.normalize_text(destino)
+            if any(destino_norm in self.normalize_text(ev) for ev in self.eventos_validos):
+                self.eventos_keywords[kw_norm] = destino
 
         # Sinónimos comunes solo si el evento destino existe en la base nominal
         sinonimos_comunes = {
@@ -139,15 +199,12 @@ class NaturalLanguageQueryBuilder:
             'hepatitis b': 'HEPATITIS B',
             'hepatitis a': 'HEPATITIS A',
             'hepatitis c': 'HEPATITIS C',
+            'hepatitis e': 'HEPATITIS E',
             'mpox': 'VIRUELA SIMICA (MPOX)',
             'viruela simica': 'VIRUELA SIMICA (MPOX)',
             'sarampion': 'ENFERMEDAD FEBRIL EXANTEMATICA-EFE (SARAMPION)',
-            'triquinosis': 'TRICHINELLOSIS (TRIQUINOSIS)',
+            'sarampión': 'ENFERMEDAD FEBRIL EXANTEMATICA-EFE (SARAMPION)',
             'chagas': 'CHAGAS AGUDO CONGENITO',
-            'leptospirosis': 'LEPTOSPIROSIS',
-            'psitacosis': 'PSITACOSIS',
-            'hantavirus': 'HANTAVIROSIS',
-            'hantavirosis': 'HANTAVIROSIS',
         }
         for kw, destino in sinonimos_comunes.items():
             kw_norm = self.normalize_text(kw)
@@ -197,6 +254,12 @@ class NaturalLanguageQueryBuilder:
         for keyword, evento in self.eventos_keywords.items():
             if keyword in text_norm and evento not in result['eventos']:
                 result['eventos'].append(evento)
+
+        # "suicidio" debe incluir ambos eventos de suicidio (con y sin resultado mortal)
+        if 'suicidio' in text_norm:
+            for ev in self.eventos_validos:
+                if 'SUICIDIO' in ev and ev not in result['eventos']:
+                    result['eventos'].append(ev)
 
         # Detectar eventos agrupados que NO están en la base nominal
         text_norm_upper = text_norm.upper()
@@ -314,12 +377,23 @@ class NaturalLanguageQueryBuilder:
             # nominal y no se detectó ningún evento real, devolvemos vacío con mensaje claro
             # en lugar de mostrar todas las enfermedades de la provincia.
             grupos = params.get('grupos_no_nominales', [])
-            if grupos and not params.get('eventos'):
-                df = pd.DataFrame()
+
+            # Si hay provincia/año pero NO se identificó ningún evento (real ni grupo),
+            # es mejor devolver vacío y pedir reformulación que mostrar TODOS los eventos.
+            if grupos:
+                if not params.get('eventos'):
+                    df = pd.DataFrame()
+            elif not params.get('eventos'):
+                if params.get('provincias') or params.get('departamentos') or params.get('años'):
+                    df = pd.DataFrame()
 
             # Mensaje base
             if len(df) == 0:
                 mensaje = '⚠️ No se encontraron registros con los parámetros indicados.'
+                if not params.get('eventos') and (params.get('provincias') or params.get('departamentos') or params.get('años')):
+                    mensaje += (' No se pudo identificar ningún evento en tu consulta'
+                                ' (ej. "sifilis", "suicidio", "tuberculosis"). Reformulá incluyendo'
+                                ' el nombre de una enfermedad o evento.')
             else:
                 mensaje = f'✅ Encontrados {len(df)} registros'
 

@@ -70,22 +70,23 @@ with col_help:
         st.markdown("""
     <div class="example-box">
         <ul>
-            <li>Dame casos de <b>diarrea</b> en <b>Buenos Aires</b> entre <b>2020</b> y <b>2022</b></li>
-            <li>Muestra <b>bronquiolitis</b> en <b>Córdoba</b> del <b>2023</b></li>
-            <li><b>Influenza</b> en <b>Santa Fe</b> en <b>2021</b></li>
-            <li>Casos de <b>IRAG</b> en <b>Tandil</b> en <b>2022</b></li>
-            <li>Total de <b>neumonía</b> en <b>Salta</b> <b>2019</b></li>
-            <li><b>ETI</b> en <b>Resistencia</b> desde <b>2018</b> hasta <b>2020</b></li>
+            <li>Casos de <b>sifilis</b> en <b>Buenos Aires</b> en <b>2024</b></li>
+            <li><b>Suicidio</b> en <b>Salta</b> entre <b>2025</b> y <b>2026</b></li>
+            <li><b>Tuberculosis</b> en <b>Córdoba</b> en <b>2023</b></li>
+            <li><b>Hepatitis</b> en <b>Tandil</b> en <b>2024</b></li>
+            <li><b>Chagas</b> en <b>Salta</b> desde <b>2020</b></li>
+            <li>Casos de <b>leptospirosis</b> en <b>Santa Fe</b> <b>2022</b></li>
         </ul>
         <hr style="margin: 0.8rem 0; border: none; border-top: 1px solid #ddd;">
         <small style="color: #666;">
-            💬 <b>Tip:</b> Escribe de forma natural. El sistema tolera errores ortográficos 
-            (ej: "bronquilitis", "diarreas", "neumonia") y detecta variaciones automáticamente.
+            💬 <b>Tip:</b> Escribe el nombre de una enfermedad o evento nominado
+            (ej: sifilis, suicidio, tuberculosis, hepatitis, chagas). El sistema tolera
+            errores ortográficos menores.
         </small>
     </div>
     """, unsafe_allow_html=True)
     
-    st.info("💡 **Eventos disponibles:** Bronquiolitis, Diarreas, Influenza (ETI), IRAG, Neumonía, y más.")
+    st.info("💡 **Eventos disponibles:** Sifilis, Suicidio, Tuberculosis, Hepatitis, Chagas, Coqueluche, Leptospirosis, Hantavirus, Triquinosis, Intoxicaciones, Meningitis y más.")
 
 with col_input:
     st.markdown("### 🗣️ Tu Consulta")
@@ -94,7 +95,7 @@ with col_input:
     query_text = st.text_area(
         "Escribe tu pregunta aquí:",
         height=120,
-        placeholder="Ejemplo: dame casos de diarrea en tandil del año 2023",
+        placeholder="Ejemplo: casos de suicidio en salta del año 2025",
         help="Escribe tu consulta en lenguaje natural. El sistema detectará automáticamente departamentos, eventos y años."
     )
     
