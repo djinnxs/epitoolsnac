@@ -2,12 +2,15 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-import re
 import streamlit as st
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from requests.exceptions import RequestException
+import time
+import random
 from concurrent.futures import ThreadPoolExecutor
-from scrapling.fetchers import Fetcher
 
 # Configuración de la página
 st.set_page_config(page_title="Epirumores - Noticias de Salud", page_icon=":newspaper:", layout="wide")
@@ -64,116 +67,50 @@ DIARIOS = [
     {'nombre': 'La Gaceta', 'url': 'https://www.lagaceta.com.ar/'},
 ]
 
-def _limpiar(texto):
-    return re.sub(r'\s+', ' ', texto or '').strip()
-
-def _enlace_valido(a_tag, base_url):
-    href = (a_tag.attrib.get('href') or '').strip()
-    if not href or href.startswith('#') or href.lower().startswith('javascript:'):
-        return ''
-    return urljoin(base_url, href)
-
-def _extraer_article(art, base_url):
-    enlaces = art.css('a[href]')
-    principal = None
-    for a in enlaces:
-        tit = (a.attrib.get('title') or '').strip()
-        txt = _limpiar(a.get_all_text())
-        if tit or len(txt) > 15:
-            principal = a
-            break
-    if principal is None and enlaces:
-        principal = enlaces[0]
-    if principal is None:
-        return None
-    titulo = (principal.attrib.get('title') or '').strip() or _limpiar(principal.get_all_text())
-    if not titulo:
-        for h in art.css('h2, h3'):
-            t = _limpiar(h.get_all_text())
-            if t and len(t) > 8:
-                titulo = t
-                break
-    href = _enlace_valido(principal, base_url)
-    if not titulo or not href:
-        return None
-    contenido = _limpiar(art.get_all_text()) or titulo
-    return titulo, href, contenido
-
-def _extraer_heading(h, base_url):
-    titulo = _limpiar(h.get_all_text())
-    if not titulo or len(titulo) < 8:
-        return None
-    a_in = h.css('a')
-    if a_in:
-        href = _enlace_valido(a_in[0], base_url)
-        if not href:
-            return None
-    else:
-        anc = h.find_ancestor(lambda e: getattr(e, 'tag', '') == 'a')
-        if anc is None:
-            return None
-        href = _enlace_valido(anc, base_url)
-        if not href:
-            return None
-    return titulo, href, titulo
-
-def scrape_diario(diario, keywords):
+def scrape_diario(diario, keywords, session):
     url = diario['url']
     nombre = diario['nombre']
     try:
-        page = Fetcher.get(url, timeout=15, retries=2, retry_delay=0.5)
-        if getattr(page, 'status', None) != 200:
-            return [], f"{nombre}: HTTP {getattr(page, 'status', '?')}"
-
-        candidatos = []
-        for art in page.css('article'):
-            c = _extraer_article(art, url)
-            if c:
-                candidatos.append(c)
-        for h in page.css('h2, h3'):
-            if h.find_ancestor(lambda e: getattr(e, 'tag', '') == 'article'):
-                continue
-            c = _extraer_heading(h, url)
-            if c:
-                candidatos.append(c)
-
-        vistos = set()
+        response = session.get(url, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
         noticias = []
-        kws = [k.lower() for k in keywords]
-        for titulo, enlace, contenido in candidatos:
-            t = _limpiar(titulo)
-            if not t:
-                continue
-            clave = (t, enlace)
-            if clave in vistos:
-                continue
-            vistos.add(clave)
-            tl = t.lower()
-            match_titulo = any(kw in tl for kw in kws)
-            if not match_titulo:
-                cl = contenido.lower()
-                match_titulo = any(kw in cl for kw in kws)
-            if match_titulo:
-                noticias.append({'diario': nombre, 'titulo': t, 'enlace': enlace})
+        # Buscamos artículos o encabezados que suelen contener noticias
+        for tag in soup.find_all(['article', 'h2', 'h3']):
+            titulo = tag.text.strip()
+            
+            # Buscamos el enlace dentro o cerca del tag
+            enlace_tag = tag.find('a') if tag.name == 'article' else tag if tag.name == 'a' else tag.find_parent('a')
+            enlace = urljoin(url, enlace_tag.get('href')) if enlace_tag and enlace_tag.get('href') else ""
 
+            if titulo and any(kw.lower() in titulo.lower() for kw in keywords):
+                noticias.append({'diario': nombre, 'titulo': titulo, 'enlace': enlace})
+        
         return noticias, None
     except Exception as e:
-        return [], f"{nombre}: {type(e).__name__}: {e}"
+        return [], str(e)
 
 @st.cache_data(ttl=1800) # El cache dura 30 minutos
 def fetch_all_data(diarios_list, keywords_list):
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    })
+    
     all_news = []
     errors = []
-
+    
+    # Procesamiento paralelo con 10 hilos para mayor velocidad
     with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(scrape_diario, d, keywords_list): d for d in diarios_list}
+        futures = {executor.submit(scrape_diario, d, keywords_list, session): d for d in diarios_list}
         for future in futures:
-            nombre = futures[future]['nombre']
             noticias, error = future.result()
-            all_news.extend(noticias)
+            if noticias:
+                all_news.extend(noticias)
             if error:
-                errors.append(error)
-
+                errors.append(f"{futures[future]['nombre']}: {error}")
+                
     return pd.DataFrame(all_news), errors
 
 def main():
