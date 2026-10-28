@@ -13,6 +13,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="Análisis Avanzado", page_icon=":chart_with_upwards_trend:", layout="wide")
+
+from utils.common import show_semana_actual
+show_semana_actual()
 st.title("📊 Análisis Avanzado")
 
 # DuckDB query

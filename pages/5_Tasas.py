@@ -21,6 +21,9 @@ from utils.common import (
 
 st.set_page_config(page_title="Epidemiología - Tasas Nacionales", page_icon=":bar_chart:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 st.title("📊 Tasas de Casos")
 
 @st.cache_data

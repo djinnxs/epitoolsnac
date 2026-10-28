@@ -10,6 +10,9 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 st.set_page_config(page_title="Epidemiologia", page_icon=":bar_chart:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # --- ENCABEZADO Y LOGO ---
 def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
@@ -49,7 +52,6 @@ with menu_cols1[0]:
     st.page_link("pages/1_Dashboard.py", label="Dashboard Principal", icon="📈")
     st.page_link("pages/3_CasosSemana.py", label="Casos por Semana", icon="📅")
     st.page_link("pages/8_Calendario.py", label="Calendario Epidemio.", icon="📆")
-    st.page_link("pages/23_SerieCronologica.py", label="Serie Cronológica", icon="🗓️")
     st.page_link("pages/14_Tendencia.py", label="Tendencias", icon="📉")
 
 with menu_cols1[1]:
@@ -66,6 +68,7 @@ with menu_cols1[2]:
     st.page_link("pages/7_Poblacion.py", label="Datos Poblacionales", icon="👥")
     st.page_link("pages/6_Tablas.py", label="Explorador de Tablas", icon="🗄️")
     st.page_link("pages/15_Avanzado.py", label="Análisis Avanzado", icon="🔬")
+    st.page_link("pages/23_Ranking.py", label="Ranking por Semana", icon="🏆")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -81,9 +84,11 @@ with menu_cols2[1]:
     st.page_link("pages/18_Alertas.py", label="Sistema de Alertas", icon="🔔")
     st.page_link("pages/11_Rumores.py", label="Gestión de Rumores", icon="🗣️")
     st.page_link("pages/13_IA.py", label="Asistente IA", icon="🧠")
+    st.page_link("pages/24_RetrasoReporte.py", label="Retraso de Reporte", icon="⏳")
 
 with menu_cols2[2]:
     st.markdown("#### ℹ️ Otros")
+    st.page_link("pages/25_ReporteSemanal.py", label="Reporte Semanal (PDF)", icon="📄")
     st.page_link("pages/30_About.py", label="Acerca de SEI", icon="ℹ️")
 
 st.markdown("---")

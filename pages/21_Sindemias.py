@@ -15,6 +15,9 @@ semana_actual = get_epi_week(hoy)
 
 st.set_page_config(page_title="Rastreador de Sindemias", page_icon="🦠", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -54,9 +57,6 @@ st.markdown(f"""
 <div class="sind-header">
     <h2>🦠 Rastreador de Sindemias — Superposición de Patógenos</h2>
     <p>Analiza la presión simultánea de múltiples eventos sobre el sistema de salud — ¿hay riesgo de colapso?</p>
-    <div style='margin-top: 10px; font-weight: bold; color: #ffeb3b; font-size: 1.1rem; border-top: 1px dotted rgba(255,255,255,0.2); padding-top: 8px;'>
-        📅 Semana Epidemiológica Actual: {semana_actual} del {hoy.year}
-    </div>
 </div>
 """, unsafe_allow_html=True)
 

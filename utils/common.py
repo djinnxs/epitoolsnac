@@ -477,3 +477,64 @@ def show_data_corte(prefix='📊 Datos hasta'):
                    f"semana epidemiológica {c['semana']} de {c['anio']}")
     else:
         st.caption("⚠️ No se pudo determinar el corte de datos.")
+
+# --- ESTILO VISUAL COMPARTIDO ---
+# Paleta y helpers para que todos los gráficos nuevos tengan la misma
+# identidad visual (referencias: OWID, CDC, ECDC).
+
+PALETA = [
+    "#1f77b4", "#e94560", "#2ca02c", "#ff7f0e", "#9467bd",
+    "#17becf", "#8c564b", "#bcbd22", "#7f7f7f", "#d62728",
+]
+
+# Escala bivariada 3x3 (filas = incidencia, columnas = tendencia).
+BIVAR_COLORS = {
+    "Inc. baja · Tend. baja": "#e8e8e8",
+    "Inc. baja · Tend. estable": "#b5c0da",
+    "Inc. baja · Tend. alta": "#6c83b5",
+    "Inc. media · Tend. baja": "#b8d6be",
+    "Inc. media · Tend. estable": "#90b2b3",
+    "Inc. media · Tend. alta": "#567994",
+    "Inc. alta · Tend. baja": "#73ae80",
+    "Inc. alta · Tend. estable": "#5a9178",
+    "Inc. alta · Tend. alta": "#2a5a5b",
+}
+
+def show_semana_actual():
+    """Banner uniforme con la semana epidemiológica actual.
+
+    Se muestra en todas las páginas justo debajo del título, con el mismo
+    estilo que ya usaban algunas (fondo oscuro, texto amarillo).
+    """
+    hoy = date.today()
+    semana, anio_epi = get_epi_week_data(hoy)
+    st.markdown(
+        f"""<div style="background-color: #1a1a2e; color: #ffeb3b;
+        padding: 10px 14px; border-radius: 8px; margin-bottom: 18px;
+        border: 1px solid #4a6fa5; text-align: center; font-weight: 600;
+        font-size: 1.05rem;">
+        📅 Semana Epidemiológica Actual: <b>{semana}</b> del {anio_epi}
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+def style_fig(fig, height=420, titulo=None, x_title=None, y_title=None,
+              hovermode="x unified", mostrar_leyenda=True):
+    """Aplica el estilo visual común a una figura Plotly (tema claro, paleta fija)."""
+    fig.update_layout(
+        template="plotly_white",
+        colorway=PALETA,
+        height=height,
+        margin=dict(l=10, r=10, t=60 if titulo else 25, b=10),
+        font=dict(family="sans-serif", size=12),
+        hovermode=hovermode,
+        showlegend=mostrar_leyenda,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
+    if titulo:
+        fig.update_layout(title=dict(text=titulo, x=0.5, xanchor="center"))
+    if x_title:
+        fig.update_xaxes(title_text=x_title)
+    if y_title:
+        fig.update_yaxes(title_text=y_title)
+    return fig

@@ -22,6 +22,9 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 st.set_page_config(page_title="Mapa Animado", page_icon="🎬", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 st.markdown("""
 <style>
     .map-header {
@@ -42,9 +45,6 @@ st.markdown(f"""
 <div class="map-header">
     <h2>🗺️ Mapa Animado de Propagación Espacio-Temporal</h2>
     <p>Observa cómo avanza un evento epidemiológico semana a semana en el territorio — dale ▶ Play</p>
-    <div style='margin-top: 10px; font-weight: bold; color: #ffeb3b; font-size: 1.1rem; border-top: 1px dotted rgba(255,255,255,0.2); padding-top: 8px;'>
-        📅 Semana Epidemiológica Actual: {semana_actual} del {hoy.year}
-    </div>
 </div>
 """, unsafe_allow_html=True)
 

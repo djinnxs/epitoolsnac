@@ -7,6 +7,9 @@ import streamlit as st
 
 st.set_page_config(page_title="Acerca de", page_icon="Information", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 st.markdown("<h2 style='text-align: center; color: #1f77b4;'>Análisis Epidemiológico </h2>", unsafe_allow_html=True)
 
 

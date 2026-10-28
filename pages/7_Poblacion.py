@@ -12,6 +12,9 @@ import os
 # ==============================================================================
 st.set_page_config(page_title="Epidemiologia - Población", page_icon=":bar_chart:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # ==============================================================================
 # CARGA DE DATOS Y SANITIZACIÓN
 # ==============================================================================

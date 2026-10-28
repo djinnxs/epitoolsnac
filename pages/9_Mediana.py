@@ -11,6 +11,9 @@ from utils.common import query_duckdb, get_distinct_events, get_distinct_years, 
 
 st.set_page_config(page_title="Mediana", page_icon=":pencil:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Configurar la configuración regional
 try:
     locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')

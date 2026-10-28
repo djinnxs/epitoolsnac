@@ -21,6 +21,9 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 st.set_page_config(page_title="Alertas Automáticas Nacionales", page_icon="🚨", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -61,9 +64,6 @@ st.markdown(f"""
 <div class="ews-header">
     <h2>🚨 Sistema de Alerta Temprana (EWS) Automático</h2>
     <p>Escaneo en tiempo real de todos los eventos y departamentos — detecta brotes sin búsqueda manual</p>
-    <div style='margin-top: 12px; font-weight: bold; color: #ffd700; font-size: 1.2rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;'>
-        📅 Semana Epidemiológica Actual: {semana_actual} del {hoy.year}
-    </div>
 </div>
 """, unsafe_allow_html=True)
 

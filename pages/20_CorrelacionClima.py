@@ -24,6 +24,9 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 st.set_page_config(page_title="Correlación Clima-Epidemia", page_icon="🌡️", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -53,9 +56,6 @@ st.markdown(f"""
 <div class="corr-header">
     <h2>🌡️ Correlación Epidemiológica-Climática con Desfase (Lag)</h2>
     <p>Variable climática desplazada N semanas hacia adelante vs Casos — detecta el lag óptimo</p>
-    <div style='margin-top: 10px; font-weight: bold; color: #ffeb3b; font-size: 1.1rem; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 8px;'>
-        📅 Semana Epidemiológica Actual: {semana_actual} del {hoy.year}
-    </div>
 </div>
 """, unsafe_allow_html=True)
 

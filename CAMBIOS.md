@@ -50,18 +50,56 @@ Fecha: 27/10/2026.
      filtro por evento + 3 métricas (total, semana más crítica, último corte).
    - 🖨️ **Tradicional**: el calendario en texto y el PDF de siempre,
      conservados tal cual.
-3. **Página nueva `23_SerieCronologica.py`** — serie cronológica
-   2018 → actualidad (barras por fecha de registro + media móvil de 4 semanas),
-   con filtros de evento/provincia, rango de fechas, KPIs y descarga CSV.
-   *(Nota: los datos se fechan en domingos —inicio de SE—, por eso la serie
-   es semanal y no diaria; se eligió el nombre honesto.)*
-4. **Home** — enlace a la página nueva en el menú + pie con el corte de datos.
+3. **Casos por Semana (3_CasosSemana.py)** — pestaña nueva **Small multiples**:
+   una mini-curva por año (SE 1 a 52), con los años elegidos resaltados y su
+   pico marcado. Permite comparar la *forma* de la temporada año a año.
+4. **Mapas (4_Mapas.py)** — reorganizado en **3 pestañas**:
+   - Provincia / Departamento (lo de siempre, con tasas y descargas).
+   - **Mapa bivariado**: color = incidencia de las últimas 4 SE × tendencia
+     (3×3), con leyenda explicativa y tabla descargable.
+   - **Cartograma de burbujas**: tamaño = casos, color = tasa x100k (útil para
+     comparar provincias grandes y despobladas con las chicas y densas).
+5. **Tendencias (14_Tendencia.py)** — **fan chart** de verdad: banda del 50%
+   (intensa) y del 80% (clara) por bootstrap de residuos + **pico estimado**
+   anotado en el gráfico.
+6. **Nowcasting (17_Nowcasting.py)** — reescrito:
+   - Antes usaba la **semana de hoy** como referencia (con datos al corte, la
+     estimación salía vacía o en cero). Ahora usa la **última SE con datos**.
+   - La corrección anterior (factor acumulado mal aplicado) producía
+     estimaciones absurdas (570 observados → 30.978 estimados). Se reemplazó
+     por una **banda de referencia histórica**: mediana y p10–p90 de las mismas
+     SE en los 5 años previos, ajustadas por el nivel del año actual.
+   - Tabla de las últimas semanas con observado / esperado / banda y % de
+     cumplimiento, más explicación del método en un expander.
+7. **Ranking por Semana (23_Ranking.py — NUEVA)** — **bump chart**: cómo cambia
+   el puesto de las provincias semana a semana (top 12 por volumen), con KPIs
+   de líder, mayor suba y mayor caída, y tabla/CSV descargable.
+8. **Retraso de Reporte (24_RetrasoReporte.py — NUEVA)** — control de calidad
+   semanal: qué provincias y eventos dejaron de reportar (semanas de atraso
+   respecto del corte), con mapa de calor provincia × SE para ver los huecos.
+9. **Reporte Semanal (25_ReporteSemanal.py — NUEVA)** — boletín descargable en
+   **PDF** (en streamlit.io) o **HTML imprimible** (en Windows sin GTK):
+   KPIs, top eventos, top provincias con tasa, serie de las últimas semanas y
+   mapa de calor SE × año. Generado con WeasyPrint (ya estaba en
+   `requirements.txt`, sin agregar dependencias).
+10. **Home** — menú actualizado (Ranking, Retraso de Reporte, Reporte Semanal)
+    + pie con el corte de datos.
 
-## 🌐 UX
+## 🗓️ Semana epidemiológica visible en todas las páginas
 
-- Filtros y URLs con el patrón nativo de Streamlit (`/SerieCronologica`, etc.).
-- Corte de datos visible en Home y Dashboard (evita interpretar datos viejos
-  como actuales).
+- Banner uniforme **"📅 Semana Epidemiológica Actual: N del AAAA"** en las
+  24 páginas + Home (antes solo estaba en 7 páginas y con estilos distintos).
+- Se eliminaron los banners duplicados de esas 7 páginas: ahora el banner es
+  uno solo, centralizado en `utils/common.py` (`show_semana_actual()`).
+- El año que se muestra es el **año epidemiológico** (correcto en el cambio de
+  año), no el año calendario.
+
+## 🎨 Identidad visual común
+
+- `PALETA` y `style_fig()` en `utils/common.py`: todos los gráficos nuevos usan
+  el mismo tema claro, tipografía, márgenes y escala de colores.
+- Escala **bivariada 3×3** (`BIVAR_COLORS`) compartida y documentada en el mapa.
+
 
 ## 🧹 Deprecaciones
 
@@ -73,11 +111,35 @@ Fecha: 27/10/2026.
 - `tests/test_common.py` — 11 tests: semana epidemiológica, corte de datos y
   **regresión del bug `ORDER BY LIMIT`**.
 - `tests/test_app.py` — smoke test con `streamlit.testing.v1.AppTest`:
-  ejecuta **Home + las 22 páginas** y falla si alguna lanza excepción.
+  ejecuta **Home + las 24 páginas** y falla si alguna lanza excepción.
 - `requirements-dev.txt` — solo `pytest` (NO afecta el deploy).
 - `.github/workflows/ci.yml` — instala el **mismo `requirements.txt`** que
-  streamlit.io (Python 3.12 en Ubuntu), compila todo, corre los 34 tests y
+  streamlit.io (Python 3.12 en Ubuntu), compila todo, corre los 36 tests y
   verifica que el servidor arranque.
+
+## ⚠️ Limitaciones conocidas (y cómo se resolvieron)
+
+- **No existe fecha del evento** en la base: solo `FECHAREGISTROCLINICA`, que
+  además define la semana epidemiológica. Por eso **no se puede** reconstruir
+  el triángulo clásico de *backfill* (casos por semana de ocurrencia vs. semana
+  de notificación). En su lugar:
+  - Nowcasting usa **banda de referencia histórica** (explicado en la página).
+  - Retraso de Reporte mide **atraso por fuente** (última SE con datos vs.
+    corte nacional), que sí es medible.
+- **WeasyPrint en Windows** necesita GTK y no está instalado: el Reporte
+  Semanal ofrece automáticamente la versión **HTML imprimible** (se abre en el
+  navegador y se guarda como PDF). En streamlit.io (Linux) el PDF funciona.
+- **Sin coordenadas de localidad/establecimiento** (`LOCALIDAD` viene
+  "SIN ESPECIFICAR"): no se pueden hacer polígonos de Voronoi. Se optó por
+  mapa bivariado + cartograma de burbujas sobre los polígonos reales.
+
+## 🔄 Cambios respecto de la primera versión de esta copia
+
+- Se **eliminó `23_SerieCronologica.py`**: para el equipo la unidad de análisis
+  es la **semana epidemiológica**, no la fecha; la página no aportaba y su
+  nombre ("diaria") era engañoso. En su lugar se agregaron Ranking por Semana,
+  Retraso de Reporte y Reporte Semanal.
+
 
 ## 📦 Infraestructura
 

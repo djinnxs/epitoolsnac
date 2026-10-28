@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from utils.common import query_duckdb, get_distinct_events
+from utils.common import query_duckdb, get_distinct_events, style_fig
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -47,6 +47,9 @@ def cargar_temperatura_semanal():
         return None
 
 st.set_page_config(page_title="Tendencias", page_icon="📈", layout="wide")
+
+from utils.common import show_semana_actual
+show_semana_actual()
 st.title("📈 Análisis de Tendencias Epidemiológicas")
 st.markdown("Predicción con modelos estadísticos considerando estacionalidad del hemisferio sur")
 
@@ -100,6 +103,35 @@ def bootstrap_ic(y_pred_centro, residuos, steps, alpha=0.2, n_sims=500, seed=42)
     low = np.percentile(sims, alpha / 2 * 100, axis=0)
     high = np.percentile(sims, (1 - alpha / 2) * 100, axis=0)
     return np.maximum(low, 0), np.maximum(high, 0)
+
+def bootstrap_ic_bandas(y_pred_centro, residuos, steps, n_sims=500, seed=42):
+    """Bandas de confianza 50% y 80% vía bootstrap bloqueado sobre residuos.
+
+    Devuelve (low80, high80, low50, high50) para dibujar un fan chart de dos niveles.
+    """
+    rng = np.random.default_rng(seed)
+    if residuos is None or len(residuos) < 10:
+        low80 = np.maximum(y_pred_centro * 0.90, 0)
+        high80 = y_pred_centro * 1.10
+        low50 = np.maximum(y_pred_centro * 0.95, 0)
+        high50 = y_pred_centro * 1.05
+        return low80, high80, low50, high50
+
+    residuos = np.asarray(residuos, dtype=float)
+    residuos = residuos[~np.isnan(residuos)]
+    block = max(1, int(len(residuos) ** 0.5))
+    sims = np.empty((n_sims, steps))
+    for i in range(n_sims):
+        start = int(rng.integers(0, max(1, len(residuos) - block + 1)))
+        idx = (start + np.arange(steps)) % len(residuos)
+        sims[i] = y_pred_centro + residuos[idx]
+
+    low80 = np.percentile(sims, 10, axis=0)
+    high80 = np.percentile(sims, 90, axis=0)
+    low50 = np.percentile(sims, 25, axis=0)
+    high50 = np.percentile(sims, 75, axis=0)
+    return (np.maximum(low80, 0), np.maximum(high80, 0),
+            np.maximum(low50, 0), np.maximum(high50, 0))
 
 def metricas_error(y_true, y_pred):
     """MAPE y RMSE (ambos robustos a ceros)."""
@@ -201,11 +233,11 @@ def deseasonalizar_predecir(y_series, steps, alpha=0.2):
         seasonal_mean = pd.Series(seas_vals).groupby(np.arange(len(seas_vals)) % seas_period).mean()
         seg_pred = [seasonal_mean.iloc[k % seas_period] for k in range(steps)]
         y_pred = np.maximum(trend_pred + np.asarray(seg_pred), 0)
-        # IC por bootstrap sobre el residuo
-        low, high = bootstrap_ic(y_pred, resid.dropna(), steps, alpha=alpha)
-        return y_pred, low, high
+        # Bandas 50% y 80% por bootstrap sobre el residuo (fan chart)
+        low80, high80, low50, high50 = bootstrap_ic_bandas(y_pred, resid.dropna(), steps)
+        return y_pred, low80, high80, low50, high50
     except Exception as e:
-        return None, None, str(e)
+        return None, None, None, None, str(e)
 
 # Cargar datos desde Parquet usando DuckDB
 query = """
@@ -308,6 +340,7 @@ with tab3:
 
     y_centro = None
     ic_low = ic_high = None
+    ic50_low = ic50_high = None
     color_pred = 'red'
 
     # --- MODELO PROPHET ---
@@ -333,7 +366,7 @@ with tab3:
             y_centro = np.maximum(res.forecast(steps=periodos_prediccion), 0)
             # IC 80% bootstrap sobre residuos
             resid = res.resid[~np.isnan(res.resid)] if hasattr(res, 'resid') else None
-            ic_low, ic_high = bootstrap_ic(y_centro, resid, periodos_prediccion)
+            ic_low, ic_high, ic50_low, ic50_high = bootstrap_ic_bandas(y_centro, resid, periodos_prediccion)
             if usar_clima:
                 color_pred = 'orange'
                 st.caption("🧊 Modelo SARIMA con covariable de temperatura (meteostat)")
@@ -353,7 +386,7 @@ with tab3:
             if fitted is not None:
                 resid = (df_ts['CANTIDAD'].values[:len(fitted)] - fitted[:len(df_ts)]) 
             y_centro = np.maximum(res.forecast(periodos_prediccion), 0)
-            ic_low, ic_high = bootstrap_ic(y_centro, resid, periodos_prediccion)
+            ic_low, ic_high, ic50_low, ic50_high = bootstrap_ic_bandas(y_centro, resid, periodos_prediccion)
             color_pred = 'green'
         except Exception as e:
             st.error(f"Error en ETS: {e}")
@@ -361,28 +394,57 @@ with tab3:
     # --- MODELO DESEASONALIZADA (STL + ETS) ---
     elif modelo_seleccionado == "Deseasonalizada":
         try:
-            y_centro, ic_low, ic_high = deseasonalizar_predecir(
+            y_centro, ic_low, ic_high, ic50_low, ic50_high = deseasonalizar_predecir(
                 df_ts['CANTIDAD'], periodos_prediccion, alpha=0.2)
             if y_centro is None:
-                st.error(f"Error en Deseasonalizada: {ic_high}")
+                st.error(f"Error en Deseasonalizada: {ic50_high}")
             else:
                 color_pred = 'purple'
                 st.caption("🧩 Predicción de la tendencia deseasonalizada (STL) recomponiendo la estacionalidad — estilo TimesFM")
         except Exception as e:
             st.error(f"Error en Deseasonalizada: {e}")
 
-    # Graficar resultado
+    # Graficar resultado — fan chart (bandas 50% y 80%)
     if y_centro is not None:
-        fig_pred.add_trace(go.Scatter(x=future_dates[:len(y_centro)], y=y_centro,
-                                      name=f'Predicción {modelo_seleccionado}',
-                                      line=dict(color=color_pred, dash='dash')))
+        fx = future_dates[:len(y_centro)]
+
         if ic_low is not None and ic_high is not None:
-            n_ic = min(len(ic_low), len(ic_high), len(future_dates))
-            fig_pred.add_trace(go.Scatter(x=future_dates[:n_ic], y=ic_high[:n_ic],
-                                          mode='lines', line=dict(width=0), showlegend=False))
-            fig_pred.add_trace(go.Scatter(x=future_dates[:n_ic], y=ic_low[:n_ic],
-                                          mode='lines', fill='tonexty', fillcolor='rgba(255,0,0,0.1)',
-                                          name='IC 80%', line=dict(width=0)))
+            n_ic = min(len(ic_low), len(ic_high), len(fx))
+            xb = fx[:n_ic]
+            # Banda 80% (más clara)
+            fig_pred.add_trace(go.Scatter(x=xb, y=ic_high[:n_ic], mode='lines',
+                                          line=dict(width=0), showlegend=False, hoverinfo='skip'))
+            fig_pred.add_trace(go.Scatter(x=xb, y=ic_low[:n_ic], mode='lines', fill='tonexty',
+                                          fillcolor='rgba(233,69,96,0.12)',
+                                          name='IC 80%', line=dict(width=0), hoverinfo='skip'))
+            # Banda 50% (más intensa)
+            if ic50_low is not None and ic50_high is not None:
+                n50 = min(len(ic50_low), len(ic50_high), len(xb))
+                fig_pred.add_trace(go.Scatter(x=xb[:n50], y=ic50_high[:n50], mode='lines',
+                                              line=dict(width=0), showlegend=False, hoverinfo='skip'))
+                fig_pred.add_trace(go.Scatter(x=xb[:n50], y=ic50_low[:n50], mode='lines', fill='tonexty',
+                                              fillcolor='rgba(233,69,96,0.25)',
+                                              name='IC 50%', line=dict(width=0), hoverinfo='skip'))
+
+        fig_pred.add_trace(go.Scatter(x=fx, y=y_centro,
+                                      name=f'Predicción {modelo_seleccionado}',
+                                      line=dict(color=color_pred, dash='dash', width=2)))
+
+        # Pico estimado (anotación)
+        try:
+            i_pico = int(np.argmax(y_centro))
+            fig_pred.add_trace(go.Scatter(
+                x=[fx[i_pico]], y=[float(y_centro[i_pico])], mode='markers',
+                marker=dict(color=color_pred, size=9, symbol='diamond'),
+                showlegend=False, hovertemplate='Pico estimado: %{y:.0f}<extra></extra>'))
+            fig_pred.add_annotation(
+                x=fx[i_pico], y=float(y_centro[i_pico]),
+                text=f"Pico estimado: {int(y_centro[i_pico]):,}".replace(",", "."),
+                showarrow=True, arrowhead=2, ay=-35,
+                font=dict(size=11), bgcolor='rgba(255,255,255,0.85)',
+                bordercolor=color_pred, borderwidth=1)
+        except Exception:
+            pass
 
     # SOLUCIÓN DEFINITIVA AL ERROR DE PROMEDIO DE FECHAS
     fig_pred.add_shape(
@@ -394,8 +456,14 @@ with tab3:
         showarrow=False, textangle=-90, xanchor="left"
     )
 
-    fig_pred.update_layout(height=500, hovermode='x unified', xaxis_title="Fecha", yaxis_title="Casos")
+    style_fig(fig_pred, height=520, x_title="Fecha", y_title="Casos",
+              titulo=f"Fan chart — predicción {modelo_seleccionado} ({periodos_prediccion} semanas)")
     st.plotly_chart(fig_pred, width="stretch")
+    st.caption(
+        "Línea punteada: predicción central. Bandas: intervalo de confianza del **50%** "
+        "(tono intenso) y del **80%** (tono claro), estimados por bootstrap sobre los "
+        "residuos del modelo. El rombo marca el pico estimado del período."
+    )
 
 with tab4:
     st.subheader("Comparación de Modelos (Backtest Walk-Forward)")

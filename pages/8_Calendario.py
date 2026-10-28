@@ -26,6 +26,9 @@ except Exception:
 # Configuración de página
 st.set_page_config(page_title="Calendario Epidemiológico", page_icon=":date:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Establecer el primer día de la semana como Domingo
 calendar.setfirstweekday(calendar.SUNDAY)
 

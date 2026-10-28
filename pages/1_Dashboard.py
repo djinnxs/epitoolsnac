@@ -18,6 +18,9 @@ from utils.common import get_parquet_path, check_parquet_exists, load_population
 # Configuración
 st.set_page_config(page_title="Epidemiologia - Dashboard Nacional", page_icon="Chart", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # ==================== CARGA DE DATOS DESDE PARQUET ====================
 @st.cache_data(ttl=3600)
 def load_data():

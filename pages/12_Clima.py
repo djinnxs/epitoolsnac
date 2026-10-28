@@ -21,6 +21,9 @@ base_url_weather = 'https://api.openweathermap.org/data/2.5/weather'
 # Configuracion de la página
 st.set_page_config(page_title="Epidemiologia", page_icon=":bar_chart:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Título de la página
 st.markdown(
     '<center><h3 style="font-weight:bold; padding:5px; border-radius:6px; width:100%;">🌅 Clima en tiempo real e histórico</h3></center>',

@@ -12,6 +12,9 @@ import os
 
 st.set_page_config(page_title="Consultas IA", page_icon="🤖", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Estilo personalizado para que se vea lindo
 st.markdown("""
 <style>

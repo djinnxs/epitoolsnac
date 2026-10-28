@@ -9,6 +9,9 @@ from utils.common import query_duckdb, get_distinct_years, get_distinct_events, 
 
 st.set_page_config(page_title="Epidemiologia - Tablas", page_icon=":bar_chart:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Título
 st.title('📚 Explorador de Datos')
 st.subheader('Filtre, ordene y descargue los datos epidemiológicos')

@@ -12,6 +12,9 @@ from scrapling.fetchers import Fetcher
 # Configuración de la página
 st.set_page_config(page_title="Epirumores - Noticias de Salud", page_icon=":newspaper:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Lista de palabras clave (Keywords)
 KEYWORDS = [
     'epidemia', 'enfermedad', 'virus', 'vacuna', 'Rabia', 'Lepidópteros', 'Lonomía', 'Alacranismo', 'Amebiasis', 

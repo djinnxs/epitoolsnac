@@ -41,19 +41,19 @@ cd "C:\Users\djinn\OneDrive\Documentos\epitoolsnac2"
    ```
 
 3. Entrá a [share.streamlit.io](https://share.streamlit.io) con tu cuenta.
-2. **Create app** → **Deploy a new app** → **From existing repo**.
-3. Elegí:
+4. **Create app** → **Deploy a new app** → **From existing repo**.
+5. Elegí:
    - Repository: **`djinnxs/epitoolsnac2`**
    - Branch: **`main`**
    - Main file path: **`Home.py`**
-4. En **Advanced settings → Secrets** pegá (si querés usar Clima e IA):
+6. En **Advanced settings → Secrets** pegá (si querés usar Clima e IA):
 
    ```toml
    OPENWEATHER_API_KEY = "tu-clave"
    OPENAI_API_KEY = "tu-clave"
    ```
    *(Sin estas claves la app funciona igual; solo Clima e IA muestran un aviso.)*
-5. **Deploy**. Listo.
+7. **Deploy**. Listo.
 
 > ⚠️ No hace falta tocar `requirements.txt`: se respetaron todas las versiones
 > declaradas, así que instala exactamente igual que el proyecto original.
@@ -71,7 +71,22 @@ cd "C:\Users\djinn\OneDrive\Documentos\epitoolsnac2"
 
 En GitHub, el workflow **CI** (`.github/workflows/ci.yml`) corre solo en cada
 push: instala el mismo `requirements.txt` que streamlit.io, compila todo,
-corre los 34 tests y verifica que el servidor arranque.
+corre los 36 tests y verifica que el servidor arranque.
+
+---
+
+## 🗂️ Páginas nuevas para revisar
+
+| Página | Qué muestra |
+|---|---|
+| **Ranking por Semana** | Cómo cambia el puesto de cada provincia SE a SE (bump chart). |
+| **Retraso de Reporte** | Qué provincias/eventos están atrasados respecto del corte y dónde hay huecos de carga. |
+| **Reporte Semanal** | Boletín descargable (PDF en la nube / HTML imprimible en Windows). |
+
+Y en las páginas de siempre: **Mapas** ahora tiene mapa bivariado y cartograma;
+**Casos por Semana** tiene small multiples; **Tendencias** tiene fan chart;
+**Nowcasting** se reescribió con una banda de referencia honesta.
+
 
 ---
 

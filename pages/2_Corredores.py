@@ -21,15 +21,15 @@ semana_actual = get_epi_week(hoy)
 
 st.set_page_config(page_title="Epidemiologia", page_icon=":bar_chart:", layout="wide")
 
+from utils.common import show_semana_actual
+show_semana_actual()
+
 # Esto descarga la librería de iconos para que los iconos de área funcionen
 st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">', unsafe_allow_html=True)
 
 # Título con Semana Actual resaltada
 st.markdown(f'''<center>
     <h3 style="font-weight:bold; padding:5px; border-radius:6px; width:100%;"><i class="fa-solid fa-chart-area"></i> SNVS Corredores endémicos</h3>
-    <div style="background-color: #1e2130; color: #ffeb3b; padding: 10px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #4a6fa5;">
-        📅 Semana Epidemiológica Actual: <b>{semana_actual}</b> del {hoy.year}
-    </div>
 </center>''', unsafe_allow_html=True)
 # Solo el título sin logo
 #st.markdown('<center><h3 style="font-weight:bold; padding:5px; border-radius:6px; width:100%;">&#x1F4C8; SNVS Corredores endémicos</h3></center>', unsafe_allow_html=True)
