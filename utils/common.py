@@ -90,7 +90,11 @@ def _parse_sql(sql, df):
         for kw in ['ORDER BY', 'GROUP BY', 'HAVING', 'LIMIT', 'UNION']:
             km = re.search(rf'\b{kw}\b', sql[start:], re.IGNORECASE)
             if km:
-                return sql[start:start+km.start()].strip(), sql[:start] + sql[start+km.start():]
+                # Se conserva un espacio al unir: sin él, "ORDER BY" + "LIMIT"
+                # quedaban pegados ("ORDER BYLIMIT") y las siguientes
+                # búsquedas de cláusulas fallaban.
+                return (sql[start:start+km.start()].strip(),
+                        sql[:start] + ' ' + sql[start+km.start():])
         return sql[start:].strip(), sql[:start]
 
     # Extraer en orden inverso para que cada cláusula no afecte a la siguiente
@@ -230,17 +234,21 @@ def _parse_sql(sql, df):
 
     return result
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _run_query(formatted_query, path, use_duckdb):
+    """Núcleo de consulta cacheado: la misma query se resuelve una sola vez por hora."""
+    if use_duckdb:
+        with duckdb.connect() as con:
+            return con.execute(formatted_query).df()
+    df = pd.read_parquet(path)
+    return _parse_sql(formatted_query, df)
+
 def query_duckdb(query, filename='base_semanal.parquet'):
     path = check_parquet_exists(filename)
     path = path.replace('\\', '/')
     formatted_query = query.replace('{parquet}', f"'{path}'")
     try:
-        if HAS_DUCKDB:
-            with duckdb.connect() as con:
-                return con.execute(formatted_query).df()
-        else:
-            df = pd.read_parquet(path)
-            return _parse_sql(formatted_query, df)
+        return _run_query(formatted_query, path, HAS_DUCKDB)
     except Exception as e:
         st.error(f"Error consultando datos: {e}")
         return pd.DataFrame()
@@ -250,7 +258,7 @@ def get_distinct_years():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            df = pd.read_parquet(path)
+            df = pd.read_parquet(path, columns=['ANIO'])
             return sorted(df['ANIO'].dropna().astype(int).unique().tolist(), reverse=True)
     except Exception:
         pass
@@ -261,7 +269,7 @@ def get_distinct_events():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            df = pd.read_parquet(path)
+            df = pd.read_parquet(path, columns=['NOMBREEVENTOAGRP'])
             return sorted(df['NOMBREEVENTOAGRP'].dropna().unique().tolist())
     except Exception:
         pass
@@ -272,7 +280,7 @@ def get_distinct_provinces():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            df = pd.read_parquet(path)
+            df = pd.read_parquet(path, columns=['PROVINCIA'])
             return sorted(df['PROVINCIA'].dropna().unique().tolist())
     except Exception:
         pass
@@ -283,7 +291,7 @@ def get_distinct_departments():
     try:
         path = get_parquet_path().replace('\\', '/')
         if os.path.exists(path):
-            df = pd.read_parquet(path)
+            df = pd.read_parquet(path, columns=['DEPARTAMENTO'])
             return sorted(df['DEPARTAMENTO'].dropna().unique().tolist())
     except Exception:
         pass
@@ -388,3 +396,84 @@ def download_excel(df, filename):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Datos')
     return output.getvalue(), filename
+
+# --- SEMANA EPIDEMIOLÓGICA Y CORTE DE DATOS ---
+# (helpers centralizados: antes estaban copiados en 7 páginas distintas)
+
+from datetime import date, timedelta
+
+def get_epi_week(fecha):
+    """Semana epidemiológica (semanas inician en domingo; la SE1 contiene el 4 de enero)."""
+    anio = fecha.year
+
+    def inicio_se_1(year):
+        cuatro_enero = date(year, 1, 4)
+        retroceso = (cuatro_enero.weekday() + 1) % 7
+        return cuatro_enero - timedelta(days=retroceso)
+
+    inicio_actual = inicio_se_1(anio)
+    if fecha < inicio_actual:
+        inicio_anterior = inicio_se_1(anio - 1)
+        return ((fecha - inicio_anterior).days // 7) + 1
+    inicio_proximo = inicio_se_1(anio + 1)
+    if fecha >= inicio_proximo:
+        return 1
+    return ((fecha - inicio_actual).days // 7) + 1
+
+def get_epi_week_data(fecha):
+    """Devuelve (semana, año epidemiológico) para una fecha."""
+    anio = fecha.year
+
+    def inicio_se_1(year):
+        cuatro_enero = date(year, 1, 4)
+        retroceso = (cuatro_enero.weekday() + 1) % 7
+        return cuatro_enero - timedelta(days=retroceso)
+
+    inicio_actual = inicio_se_1(anio)
+    if fecha < inicio_actual:
+        inicio_anterior = inicio_se_1(anio - 1)
+        dias = (fecha - inicio_anterior).days
+        return (dias // 7) + 1, anio - 1
+    inicio_proximo = inicio_se_1(anio + 1)
+    if fecha >= inicio_proximo:
+        return 1, anio + 1
+    dias = (fecha - inicio_actual).days
+    return (dias // 7) + 1, anio
+
+def epiweek_to_date(anio, semana):
+    """Fecha de inicio (domingo) de la semana epidemiológica."""
+    four_jan = date(anio, 1, 4)
+    start_se1 = four_jan - timedelta(days=(four_jan.weekday() + 1) % 7)
+    return start_se1 + timedelta(weeks=semana - 1)
+
+@st.cache_data(ttl=3600)
+def get_data_corte(filename='base_semanal.parquet'):
+    """Último corte disponible en la base:
+    {'anio', 'semana', 'fecha_inicio', 'fecha_fin'} o None si no hay datos."""
+    try:
+        path = get_parquet_path(filename)
+        if not os.path.exists(path):
+            return None
+        df = pd.read_parquet(path, columns=['ANIO', 'SEMANA'])
+        if df.empty:
+            return None
+        anio = int(df['ANIO'].max())
+        semana = int(df.loc[df['ANIO'] == anio, 'SEMANA'].max())
+        inicio = epiweek_to_date(anio, semana)
+        return {
+            'anio': anio,
+            'semana': semana,
+            'fecha_inicio': inicio,
+            'fecha_fin': inicio + timedelta(days=6),  # sábado = fin de la SE
+        }
+    except Exception:
+        return None
+
+def show_data_corte(prefix='📊 Datos hasta'):
+    """Muestra el corte de datos como pie de página en cualquier página."""
+    c = get_data_corte()
+    if c:
+        st.caption(f"{prefix} {c['fecha_fin'].strftime('%d/%m/%Y')} · "
+                   f"semana epidemiológica {c['semana']} de {c['anio']}")
+    else:
+        st.caption("⚠️ No se pudo determinar el corte de datos.")

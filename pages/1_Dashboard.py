@@ -13,7 +13,7 @@ try:
     HAS_DUCKDB = True
 except ImportError:
     HAS_DUCKDB = False
-from utils.common import get_parquet_path, check_parquet_exists, load_population_province, format_number, style_argentina
+from utils.common import get_parquet_path, check_parquet_exists, load_population_province, format_number, style_argentina, get_data_corte
 
 # Configuración
 st.set_page_config(page_title="Epidemiologia - Dashboard Nacional", page_icon="Chart", layout="wide")
@@ -128,6 +128,68 @@ def filter_dataframe(df, date1, date2, ANIO, EVENTO, PROVINCIA, GRUPO):
     return f
 
 filtered_df = filter_dataframe(df, date1, date2, ANIO, EVENTO, PROVINCIA, GRUPO)
+
+# ==================== TARJETAS KPI (variación vs. semana anterior) ====================
+corte = get_data_corte()
+
+def _top_categoria(sub, col):
+    """Devuelve (valor_maximo, %_del_total) de una categoría, o (None, 0)."""
+    if sub.empty:
+        return None, 0.0
+    g = (sub.groupby(col, as_index=False)["CANTIDAD"].sum()
+         .sort_values("CANTIDAD", ascending=False))
+    total = float(g["CANTIDAD"].sum())
+    if total <= 0 or g.empty:
+        return None, 0.0
+    return str(g.iloc[0][col]), float(g.iloc[0]["CANTIDAD"]) / total * 100
+
+k1, k2, k3, k4 = st.columns(4)
+
+total_casos = int(filtered_df["CANTIDAD"].sum()) if not filtered_df.empty else 0
+
+with k1:
+    st.metric("📌 Casos en el rango", format_number(total_casos))
+
+with k2:
+    if filtered_df.empty:
+        st.metric("📈 Última semana con datos", "—")
+    else:
+        sem = (filtered_df.groupby(["ANIO", "SEMANA"], as_index=False)["CANTIDAD"]
+               .sum().sort_values(["ANIO", "SEMANA"]))
+        if len(sem) >= 2:
+            ult, prev = sem.iloc[-1], sem.iloc[-2]
+            v_ult, v_prev = int(ult["CANTIDAD"]), int(prev["CANTIDAD"])
+            delta_pct = (v_ult - v_prev) / v_prev * 100 if v_prev else None
+            st.metric(
+                f"📈 S{int(ult['SEMANA'])} · {int(ult['ANIO'])}",
+                format_number(v_ult),
+                delta=f"{delta_pct:+.1f}%" if delta_pct is not None else None,
+                delta_color="inverse",  # subir casos = peor → rojo
+                help=f"Semana anterior (S{int(prev['SEMANA'])}): {format_number(v_prev)} casos",
+            )
+        else:
+            st.metric("📈 Última semana",
+                      format_number(int(sem.iloc[-1]["CANTIDAD"])))
+
+with k3:
+    prov, pct = _top_categoria(filtered_df, "PROVINCIA")
+    st.metric("🗺️ Provincia líder", prov if prov else "—",
+              delta=f"{pct:.1f}% del total" if prov else None,
+              delta_color="off")
+
+with k4:
+    ev, pct = _top_categoria(filtered_df, "NOMBREEVENTOAGRP")
+    ev_label = (ev[:36] + "…") if ev and len(ev) > 36 else ev
+    st.metric("🦠 Evento líder", ev_label if ev_label else "—",
+              delta=f"{pct:.1f}% del total" if ev else None,
+              delta_color="off")
+
+if corte:
+    st.caption(
+        f"📊 Datos hasta el {corte['fecha_fin'].strftime('%d/%m/%Y')} · "
+        f"semana epidemiológica {corte['semana']} de {corte['anio']} · "
+        f"{len(filtered_df):,} registros filtrados".replace(",", ".")
+    )
 
 # ==================== VISUALIZACIONES ====================
 

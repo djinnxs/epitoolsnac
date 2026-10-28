@@ -11,22 +11,10 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-# Lógica de Semana Epidemiológica (como en Calendario)
-def get_epi_week(fecha):
-    """Semana epidemiologica (semanas inician en domingo, SE1 contiene el 4 de enero)."""
-    anio = fecha.year
-    def inicio_se_1(year):
-        cuatro_enero = date(year, 1, 4)
-        retroceso = (cuatro_enero.weekday() + 1) % 7
-        return cuatro_enero - timedelta(days=retroceso)
-    inicio_actual = inicio_se_1(anio)
-    if fecha < inicio_actual:
-        inicio_anterior = inicio_se_1(anio - 1)
-        return ((fecha - inicio_anterior).days // 7) + 1
-    inicio_proximo = inicio_se_1(anio + 1)
-    if fecha >= inicio_proximo:
-        return 1
-    return ((fecha - inicio_actual).days // 7) + 1
+from datetime import date, timedelta
+
+# Semana epidemiológica centralizada en utils/common (antes duplicada en 7 páginas)
+from utils.common import get_epi_week
 
 hoy = date.today()
 semana_actual = get_epi_week(hoy)

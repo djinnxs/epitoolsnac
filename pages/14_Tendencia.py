@@ -419,7 +419,7 @@ with tab4:
             ])
             mejor_mape = df_cmp.loc[df_cmp['MAPE (%)'].idxmin()]['Modelo'] if not df_cmp.empty else '—'
             st.success(f"🏆 El modelo con menor error (MAPE) en holdout fue: **{mejor_mape}**")
-            st.dataframe(df_cmp, use_container_width=True)
+            st.dataframe(df_cmp, width="stretch")
         else:
             st.warning("El backtest no pudo converger para ningún modelo con estos datos.")
 

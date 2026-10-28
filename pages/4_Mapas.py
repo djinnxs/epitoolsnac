@@ -147,7 +147,7 @@ with left_col:
         title_text=title_prov,
         title_x=0.5
     )
-    st.plotly_chart(fig_prov, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_prov, width="stretch", config={'displayModeBar': False})
 
     if not merge_prov.empty:
         cols_prov = ["nam", "CANTIDAD"]
@@ -168,7 +168,7 @@ with left_col:
         if not tabla_prov.empty:
             st.write("Datos por Provincia")
             cols_mostrar = [c for c in ["Provincia", "Casos", "Población", "Tasas"] if c in tabla_prov.columns]
-            st.dataframe(tabla_prov[cols_mostrar], use_container_width=True)
+            st.dataframe(tabla_prov[cols_mostrar], width="stretch")
             excel_prov, name_prov = download_excel(tabla_prov, "mapa_provincia.xlsx")
             st.download_button("Descargar Excel Provincia", excel_prov, name_prov)
 
@@ -213,7 +213,7 @@ with right_col:
         title_text=title_depto,
         title_x=0.5
     )
-    st.plotly_chart(fig_depto, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_depto, width="stretch", config={'displayModeBar': False})
 
     if not merge_depto.empty:
         cols_depto = ["DEPARTAMENTO", "PROVINCIA", "CANTIDAD"]
@@ -237,6 +237,6 @@ with right_col:
         if not tabla_depto.empty:
             st.write("Datos por Departamento")
             cols_mostrar = [c for c in ["Departamento", "Provincia", "Casos", "Población", "Tasas"] if c in tabla_depto.columns]
-            st.dataframe(tabla_depto[cols_mostrar], use_container_width=True)
+            st.dataframe(tabla_depto[cols_mostrar], width="stretch")
             excel_depto, name_depto = download_excel(tabla_depto, "mapa_departamento.xlsx")
             st.download_button("Descargar Excel Departamento", excel_depto, name_depto)

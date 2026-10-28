@@ -49,6 +49,7 @@ with menu_cols1[0]:
     st.page_link("pages/1_Dashboard.py", label="Dashboard Principal", icon="📈")
     st.page_link("pages/3_CasosSemana.py", label="Casos por Semana", icon="📅")
     st.page_link("pages/8_Calendario.py", label="Calendario Epidemio.", icon="📆")
+    st.page_link("pages/23_SerieCronologica.py", label="Serie Cronológica", icon="🗓️")
     st.page_link("pages/14_Tendencia.py", label="Tendencias", icon="📉")
 
 with menu_cols1[1]:
@@ -86,3 +87,12 @@ with menu_cols2[2]:
     st.page_link("pages/30_About.py", label="Acerca de SEI", icon="ℹ️")
 
 st.markdown("---")
+
+# --- PIE CON CORTE DE DATOS ---
+from utils.common import get_data_corte
+_corte = get_data_corte()
+if _corte:
+    st.caption(
+        f"📊 Datos hasta el {_corte['fecha_fin'].strftime('%d/%m/%Y')} · "
+        f"semana epidemiológica {_corte['semana']} de {_corte['anio']}"
+    )

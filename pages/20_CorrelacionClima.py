@@ -11,25 +11,8 @@ import os
 from scipy import stats
 import logging
 from datetime import date, timedelta
-from utils.common import query_duckdb, get_distinct_events, get_distinct_years
+from utils.common import query_duckdb, get_distinct_events, get_distinct_years, get_epi_week
 import warnings
-
-# Lógica de Semana Epidemiológica (como en Calendario)
-def get_epi_week(fecha):
-    """Semana epidemiologica (semanas inician en domingo, SE1 contiene el 4 de enero)."""
-    anio = fecha.year
-    def inicio_se_1(year):
-        cuatro_enero = date(year, 1, 4)
-        retroceso = (cuatro_enero.weekday() + 1) % 7
-        return cuatro_enero - timedelta(days=retroceso)
-    inicio_actual = inicio_se_1(anio)
-    if fecha < inicio_actual:
-        inicio_anterior = inicio_se_1(anio - 1)
-        return ((fecha - inicio_anterior).days // 7) + 1
-    inicio_proximo = inicio_se_1(anio + 1)
-    if fecha >= inicio_proximo:
-        return 1
-    return ((fecha - inicio_actual).days // 7) + 1
 
 hoy = date.today()
 semana_actual = get_epi_week(hoy)

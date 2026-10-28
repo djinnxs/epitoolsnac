@@ -1,0 +1,2 @@
+# Dependencias SOLO para desarrollo/pruebas (NO se instalan en streamlit.io)
+pytest>=8.0,<9
