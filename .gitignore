@@ -238,3 +238,6 @@ __pycache__/
 # Data (opcional - descomentar si no quieres subir datos grandes)
 # data/*.parquet
 # data/*.csv
+
+# packages.txt es necesario: streamlit.io instala de ahi las librerias que WeasyPrint necesita (PDF del Reporte Semanal)
+!packages.txt
