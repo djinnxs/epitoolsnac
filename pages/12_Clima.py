@@ -15,7 +15,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-Api_key = os.getenv('OPENWEATHER_API_KEY', '')
+
+def _obtener_clave_openweather():
+    """Clave de OpenWeather: variables de entorno y, si no, secrets de streamlit.io."""
+    clave = os.getenv('OPENWEATHER_API_KEY', '')
+    if clave:
+        return clave
+    try:
+        return st.secrets.get('OPENWEATHER_API_KEY', '')
+    except Exception:
+        return ''
+
+
+Api_key = _obtener_clave_openweather()
 base_url_weather = 'https://api.openweathermap.org/data/2.5/weather'
 
 # Configuracion de la página
