@@ -126,6 +126,19 @@ for i, prov in enumerate(pivot_top.index):
         ),
     ))
 
+    # Etiqueta al final de la línea (estilo bump chart): reemplaza la leyenda,
+    # que con 12 provincias se superponía con el título.
+    nombre = prov.title()
+    fig.add_annotation(
+        x=semanas[-1],
+        y=int(rank.loc[prov, semanas[-1]]),
+        text=(nombre[:16] + "…") if len(nombre) > 16 else nombre,
+        xanchor="left",
+        xshift=10,
+        showarrow=False,
+        font=dict(size=10, color=color),
+    )
+
 style_fig(
     fig,
     height=620,
@@ -133,13 +146,15 @@ style_fig(
     x_title="Semana epidemiológica",
     y_title="Puesto (1 = mayor valor)",
     hovermode="closest",
+    mostrar_leyenda=False,
 )
 fig.update_yaxes(autorange="reversed", dtick=1, range=[len(pivot_top) + 0.5, 0.5])
-fig.update_xaxes(dtick=1)
+fig.update_xaxes(range=[semanas[0] - 0.5, semanas[-1] + 5.5], dtick=1)
 st.plotly_chart(fig, width="stretch")
 st.caption(
-    "Cada línea es una provincia del top 12 por volumen. El eje Y está invertido: "
-    "arriba = mejor puesto. Sirve para ver relevos de liderazgo y brotes que escalan rápido."
+    "Cada línea es una provincia del top 12 por volumen, con su nombre al final. "
+    "El eje Y está invertido: arriba = mejor puesto. Sirve para ver relevos de "
+    "liderazgo y brotes que escalan rápido (el nombre completo aparece al pasar el mouse)."
 )
 
 # ── Tabla de posiciones ───────────────────────────────────────────────────────
