@@ -128,7 +128,9 @@ Fecha: 27/10/2026.
     corte nacional), que sí es medible.
 - **WeasyPrint en Windows** necesita GTK y no está instalado: el Reporte
   Semanal ofrece automáticamente la versión **HTML imprimible** (se abre en el
-  navegador y se guarda como PDF). En streamlit.io (Linux) el PDF funciona.
+  navegador y se guarda como PDF). En streamlit.io (Linux) el PDF funciona:
+  el repo incluye **`packages.txt`** con las librerías de sistema que
+  WeasyPrint necesita y streamlit.io las instala solas al desplegar.
 - **Sin coordenadas de localidad/establecimiento** (`LOCALIDAD` viene
   "SIN ESPECIFICAR"): no se pueden hacer polígonos de Voronoi. Se optó por
   mapa bivariado + cartograma de burbujas sobre los polígonos reales.

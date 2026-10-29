@@ -73,6 +73,14 @@ En GitHub, el workflow **CI** (`.github/workflows/ci.yml`) corre solo en cada
 push: instala el mismo `requirements.txt` que streamlit.io, compila todo,
 corre los 36 tests y verifica que el servidor arranque.
 
+### 📄 Sobre el PDF del Reporte Semanal
+
+streamlit.io (Linux) instala aparte de `requirements.txt` lo que ponga en
+**`packages.txt`** (librerías del sistema). Ya está incluido con lo que
+WeasyPrint necesita (pango, harfbuzz, fontconfig), así que el **PDF se genera
+solo al desplegar**. Solo si algún día cambiara la plataforma, en Windows sin
+esas librerías la misma página ofrece el **HTML imprimible** de respaldo.
+
 ---
 
 ## 🗂️ Páginas nuevas para revisar
