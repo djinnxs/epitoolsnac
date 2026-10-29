@@ -241,6 +241,15 @@ if st.button("📄 Generar reporte", type="primary"):
         st.session_state["reporte_html"] = html_reporte
         st.session_state["reporte_nombre"] = nombre_archivo
         st.session_state["reporte_se"] = corte_se
+        # El PDF se intenta una sola vez, al generar el reporte:
+        # en streamlit.io funciona; en Windows sin las librerías queda None.
+        st.session_state["reporte_pdf"] = None
+        try:
+            from weasyprint import HTML
+
+            st.session_state["reporte_pdf"] = HTML(string=html_reporte).write_pdf()
+        except Exception:
+            pass
 
 if st.session_state.get("reporte_html"):
     html_reporte = st.session_state["reporte_html"]
@@ -251,10 +260,8 @@ if st.session_state.get("reporte_html"):
 
     col_pdf, col_html = st.columns(2)
     with col_pdf:
-        try:
-            from weasyprint import HTML
-
-            pdf_bytes = HTML(string=html_reporte).write_pdf()
+        pdf_bytes = st.session_state.get("reporte_pdf")
+        if pdf_bytes:
             st.download_button(
                 "⬇️ Descargar PDF",
                 pdf_bytes,
@@ -262,11 +269,12 @@ if st.session_state.get("reporte_html"):
                 "application/pdf",
                 type="primary",
             )
-        except Exception:
-            st.info(
-                "El PDF no se puede generar en este equipo (falta la librería GTK de WeasyPrint). "
-                "En streamlit.io funciona. Mientras tanto, usá el HTML: se abre en el navegador "
-                "y desde ahí podés imprimirlo o guardarlo como PDF."
+        else:
+            st.caption(
+                "🖨️ Al desplegar en **streamlit.io** acá aparece el botón "
+                "**Descargar PDF**. En este equipo no está la librería correspondiente: "
+                "usá el HTML de la derecha (se abre en el navegador y se puede "
+                "imprimir o guardar como PDF)."
             )
     with col_html:
         st.download_button(
