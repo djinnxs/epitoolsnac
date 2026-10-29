@@ -73,9 +73,30 @@ with col1:
     years = get_distinct_years()
     anio  = st.selectbox("Año de análisis", years)
 with col2:
-    semana_actual = get_epi_week(date.today())
-    semana = st.number_input("Semana epidemiológica", min_value=1, max_value=52,
-                             value=min(semana_actual, 52))
+    # Semana por defecto: la última CON CARGA REAL del año elegido. La semana
+    # del corte puede estar casi vacía (cargas tardías del SNVS) y el escaneo
+    # no encontraria nada.
+    _tot = query_duckdb(
+        f"SELECT SEMANA, SUM(CANTIDAD) AS C FROM {{parquet}} WHERE ANIO = {anio} AND SEMANA != 53 GROUP BY SEMANA"
+    )
+    _sem_corte = int(_tot["SEMANA"].max()) if not _tot.empty else min(semana_actual, 52)
+    _sem_default = _sem_corte
+    _aviso = ""
+    if not _tot.empty and _sem_corte >= 4:
+        _ultimas = _tot[_tot["SEMANA"] > _sem_corte - 4]
+        _ref = float(_ultimas["C"].max())
+        _completas = _ultimas[_ultimas["C"] >= 0.7 * _ref]
+        if not _completas.empty:
+            _sem_default = int(_completas["SEMANA"].max())
+        if _sem_default != _sem_corte:
+            _casos_corte = int(_tot.loc[_tot["SEMANA"] == _sem_corte, "C"].sum())
+            _palabra = "caso" if _casos_corte == 1 else "casos"
+            _aviso = (f"⚠️ La SE {_sem_corte} de {anio} recién se está cargando "
+                      f"({_casos_corte} {_palabra}). Se analiza por defecto la SE {_sem_default}, "
+                      "la última con carga completa.")
+    semana = st.number_input("Semana epidemiológica", min_value=1, max_value=52, value=_sem_default)
+    if _aviso:
+        st.caption(_aviso)
 with col3:
     umbral_pct_alerta = st.slider(
         "% de alerta (percentil de zona Alerta)", 50, 90, 75,
@@ -103,38 +124,38 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
         geo_filter = f"AND PROVINCIA = '{provincia_seleccionada}'" if provincia_seleccionada != "Nacional" else ""
 
         query_hist = f"""
-        SELECT DEPARTAMENTO, NOMBREEVENTOAGRP, ANIO, SEMANA, SUM(CANTIDAD) AS CANTIDAD
+        SELECT PROVINCIA, DEPARTAMENTO, COD_DEPTO, NOMBREEVENTOAGRP, ANIO, SEMANA, SUM(CANTIDAD) AS CANTIDAD
         FROM {{parquet}}
         WHERE ANIO >= {anio_desde}
           AND ANIO <  {anio}
           AND SEMANA = {semana}
           AND SEMANA != 53
           {geo_filter}
-        GROUP BY DEPARTAMENTO, NOMBREEVENTOAGRP, ANIO, SEMANA
+        GROUP BY PROVINCIA, DEPARTAMENTO, COD_DEPTO, NOMBREEVENTOAGRP, ANIO, SEMANA
         """
         df_hist = query_duckdb(query_hist)
 
         # ── Cargar datos del año actual ───────────────────────────────────────
         query_act = f"""
-        SELECT DEPARTAMENTO, NOMBREEVENTOAGRP, SUM(CANTIDAD) AS CANTIDAD_ACTUAL
+        SELECT PROVINCIA, DEPARTAMENTO, COD_DEPTO, NOMBREEVENTOAGRP, SUM(CANTIDAD) AS CANTIDAD_ACTUAL
         FROM {{parquet}}
         WHERE ANIO = {anio}
           AND SEMANA = {semana}
           AND SEMANA != 53
           {geo_filter}
-        GROUP BY DEPARTAMENTO, NOMBREEVENTOAGRP
+        GROUP BY PROVINCIA, DEPARTAMENTO, COD_DEPTO, NOMBREEVENTOAGRP
         """
         df_actual = query_duckdb(query_act)
 
         # ── Cargar datos semana anterior (para variación %) ───────────────────
         sem_prev = max(1, semana - 1)
         query_prev = f"""
-        SELECT DEPARTAMENTO, NOMBREEVENTOAGRP, SUM(CANTIDAD) AS CANTIDAD_PREV
+        SELECT PROVINCIA, DEPARTAMENTO, COD_DEPTO, NOMBREEVENTOAGRP, SUM(CANTIDAD) AS CANTIDAD_PREV
         FROM {{parquet}}
         WHERE ANIO = {anio}
           AND SEMANA = {sem_prev}
           {geo_filter}
-        GROUP BY DEPARTAMENTO, NOMBREEVENTOAGRP
+        GROUP BY PROVINCIA, DEPARTAMENTO, COD_DEPTO, NOMBREEVENTOAGRP
         """
         df_prev = query_duckdb(query_prev)
 
@@ -142,8 +163,10 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
         st.warning("No hay datos suficientes para el análisis.")
         st.stop()
 
-    # ── Calcular cuartiles por (DEPARTAMENTO, EVENTO) ─────────────────────────
-    cuartiles = df_hist.groupby(['DEPARTAMENTO', 'NOMBREEVENTOAGRP'])['CANTIDAD'].agg(
+    # ── Calcular cuartiles por código de departamento y evento ────────────────
+    # (si se agrupara por nombre, los departamentos homónimos de distintas
+    #  provincias —ejem. "Capital"— quedarian mezclados)
+    cuartiles = df_hist.groupby(['COD_DEPTO', 'NOMBREEVENTOAGRP'])['CANTIDAD'].agg(
         q25=lambda x: x.quantile(0.25),
         q50=lambda x: x.quantile(0.50),
         q75=lambda x: x.quantile(umbral_pct_alerta / 100),
@@ -151,8 +174,9 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
     ).reset_index()
 
     # ── Merge con datos actuales ───────────────────────────────────────────────
-    merged = df_actual.merge(cuartiles, on=['DEPARTAMENTO', 'NOMBREEVENTOAGRP'], how='left')
-    merged = merged.merge(df_prev, on=['DEPARTAMENTO', 'NOMBREEVENTOAGRP'], how='left')
+    merged = df_actual.merge(cuartiles, on=['COD_DEPTO', 'NOMBREEVENTOAGRP'], how='left')
+    merged = merged.merge(df_prev[['COD_DEPTO', 'NOMBREEVENTOAGRP', 'CANTIDAD_PREV']],
+                          on=['COD_DEPTO', 'NOMBREEVENTOAGRP'], how='left')
     if 'CANTIDAD_PREV' in merged.columns:
         merged['CANTIDAD_PREV'] = merged['CANTIDAD_PREV'].fillna(0)
     else:
@@ -219,7 +243,8 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
         df_show = df_show[df_show['estado'].isin(filtro_estado)]
     if buscar:
         mask = (df_show['NOMBREEVENTOAGRP'].str.contains(buscar, case=False, na=False) |
-                df_show['DEPARTAMENTO'].str.contains(buscar, case=False, na=False))
+                df_show['DEPARTAMENTO'].str.contains(buscar, case=False, na=False) |
+                df_show['PROVINCIA'].str.contains(buscar, case=False, na=False))
         df_show = df_show[mask]
 
     # Ordenar: Alertas primero, luego Precaución, luego normal
@@ -244,7 +269,7 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
         st.markdown(f"""
         <div class="alert-{colores[c]}">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="alert-title">{emoji} <b>{row['NOMBREEVENTOAGRP']}</b> — <i>{row['DEPARTAMENTO']}</i></span>
+                <span class="alert-title">{emoji} <b>{row['NOMBREEVENTOAGRP']}</b> — <i>{row['DEPARTAMENTO']} - {row['PROVINCIA']}</i></span>
                 <span class="badge-{colores[c]}">{badge}</span>
             </div>
             <div class="alert-detail">
@@ -261,10 +286,11 @@ if st.button("🔍 Escanear Brotes Automáticamente", type="primary"):
 
     # ── Tabla descargable ─────────────────────────────────────────────────────
     with st.expander("📋 Ver tabla completa y descargar"):
-        cols_export = ['DEPARTAMENTO', 'NOMBREEVENTOAGRP', 'CANTIDAD_ACTUAL',
+        cols_export = ['DEPARTAMENTO', 'PROVINCIA', 'NOMBREEVENTOAGRP', 'CANTIDAD_ACTUAL',
                        'CANTIDAD_PREV', 'variacion_pct', 'q50', 'q75', 'media', 'estado']
         df_export = df_show[cols_export].rename(columns={
             'DEPARTAMENTO': 'Departamento',
+            'PROVINCIA': 'Provincia',
             'NOMBREEVENTOAGRP': 'Evento',
             'CANTIDAD_ACTUAL': f'Casos SE{semana}',
             'CANTIDAD_PREV': f'Casos SE{sem_prev}',
