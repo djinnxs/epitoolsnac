@@ -35,7 +35,7 @@ with col1:
 with col2:
     evento = st.selectbox("Evento", ["Todos los eventos"] + get_distinct_events())
 with col3:
-    n_sem = st.slider("Semanas en la serie", min_value=4, max_value=26, value=12, step=1)
+    n_sem = st.slider("Semanas en la serie", min_value=4, max_value=52, value=12, step=1)
 
 # ── Helpers de formato ────────────────────────────────────────────────────────
 def fmt(n):
