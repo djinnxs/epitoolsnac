@@ -1,10 +1,9 @@
 # 📋 epitoolsnac2 — Qué es y cómo usarlo
 
-> **Copia de mejora de `epitoolsnac`, SOLO LOCAL.** El proyecto original
-> (`epitoolsnac\`) y **todo lo que está en GitHub quedaron intactos**: no se
-> subió ni se modificó nada remoto. Esto es para que lo pruebes en tu
-> computadora y, cuando vos (y tus jefes) lo aprueben, recién ahí se decida
-> publicarlo.
+> **Copia de mejora de `epitoolsnac`.** El proyecto original (`epitoolsnac\`)
+> quedó intacto: no se modificó nada de esa carpeta ni de su app en vivo.
+> El código nuevo está en el repositorio **`djinnxs/epitoolsnac2`** (privado,
+> ya subido a GitHub) y **aún no está desplegado en streamlit.io**.
 
 ---
 
@@ -21,39 +20,27 @@ cd "C:\Users\djinn\OneDrive\Documentos\epitoolsnac2"
 
 ---
 
-## 🚀 Publicar en streamlit.io (SOLO cuando lo apruebes — NO se hizo)
+## 🚀 Publicar en streamlit.io (siguiente paso)
 
-> ⛔ **Estado actual: 100% local.** No hay repositorio remoto configurado y
-> **no se subió nada a GitHub**. La app en vivo de tus jefes sigue exactamente
-> como estaba.
+> ✅ **Repositorio ya creado y subido:** [`djinnxs/epitoolsnac2`](https://github.com/djinnxs/epitoolsnac2)
+> (privado, branch `main`, con todos los datos). La app en vivo de tus jefes
+> sigue exactamente como estaba.
 >
-> Cuando quieras publicar (después de tu revisión y la aprobación de tus
-> jefes), el paso a paso es:
-
-1. Crear un repositorio **nuevo** en GitHub (por ejemplo `epitoolsnac2`).
-   No usar el repo original.
-2. En esta carpeta:
-
-   ```powershell
-   cd "C:\Users\djinn\OneDrive\Documentos\epitoolsnac2"
-   git remote add origin https://github.com/djinnxs/epitoolsnac2.git
-   git push -u origin main
-   ```
-
-3. Entrá a [share.streamlit.io](https://share.streamlit.io) con tu cuenta.
-4. **Create app** → **Deploy a new app** → **From existing repo**.
-5. Elegí:
+> Lo único que queda es el deploy en streamlit.io:
+1. Entrá a [share.streamlit.io](https://share.streamlit.io) con tu cuenta.
+2. **Create app** → **Deploy a new app** → **From existing repo**.
+3. Elegí:
    - Repository: **`djinnxs/epitoolsnac2`**
    - Branch: **`main`**
    - Main file path: **`Home.py`**
-6. En **Advanced settings → Secrets** pegá (si querés usar Clima e IA):
+4. En **Advanced settings → Secrets** pegá (si querés usar Clima e IA):
 
    ```toml
    OPENWEATHER_API_KEY = "tu-clave"
    OPENAI_API_KEY = "tu-clave"
    ```
    *(Sin estas claves la app funciona igual; solo Clima e IA muestran un aviso.)*
-7. **Deploy**. Listo.
+5. **Deploy**. Listo.
 
 > ⚠️ No hace falta tocar `requirements.txt`: se respetaron todas las versiones
 > declaradas, así que instala exactamente igual que el proyecto original.
