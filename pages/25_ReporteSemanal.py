@@ -177,9 +177,12 @@ def construir_reporte(anio, evento, n_sem):
   .bar span {{ position: absolute; top: -14px; left: 0; right: 0; text-align: center; font-size: 8px; }}
   .lbls {{ display: flex; gap: 3px; margin-top: 2px; }}
   .lbl {{ flex: 1; text-align: center; font-size: 8px; color: #555; }}
-  .heat td {{ padding: 0; width: 11px; height: 13px; border: 1px solid #fff; }}
-  .heat th.xh {{ font-size: 7px; padding: 0; text-align: center; background: #eef2f7; color: #333; }}
-  .heat th.yh {{ font-size: 9px; padding: 0 4px; background: #eef2f7; color: #333; }}
+  .heat {{ table-layout: fixed; }}
+  .heat td {{ padding: 0; height: 13px; border: 1px solid #fff; }}
+  .heat th.xh {{ font-size: 7px; padding: 0; text-align: center; background: #eef2f7; color: #333;
+                 overflow: hidden; }}
+  .heat th.yh {{ width: 36px; font-size: 9px; padding: 0 4px; text-align: right;
+                 background: #eef2f7; color: #333; }}
   .footer {{ margin-top: 14px; font-size: 9px; color: #777; border-top: 1px solid #ccc; padding-top: 4px; }}
 </style></head>
 <body>
