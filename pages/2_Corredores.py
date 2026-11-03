@@ -128,14 +128,34 @@ if st.button("Generar Gráfico"):
         ]
         if not anos_anteriores.empty:
             cuartiles = matriz.loc[anos_anteriores].apply(lambda x: pd.Series(x).quantile([0.25, 0.5, 0.75])).T
-            cuartiles.columns = ['Exito', 'Seguridad', 'Alerta']
-            
+            cuartiles.columns = ['Q25', 'Q50', 'Q75']
+            # Zonas del corredor endémico por cuantiles:
+            #   Éxito     = bajo Q25
+            #   Seguridad = de Q25 a Q50
+            #   Alerta    = de Q50 a Q75
+            #   Brote     = sobre Q75 (fondo rojo)
+            # Las series son apiladas: cada una aporta el TRAMO entre cortes,
+            # no el corte acumulado (por eso antes quedaban superpuestas al triple).
+            q25 = cuartiles['Q25']
+            q50 = cuartiles['Q50']
+            q75 = cuartiles['Q75']
+            tramo_seguridad = (q50 - q25).clip(lower=0)
+            tramo_alerta = (q75 - q50).clip(lower=0)
+
             # Obtener los datos del año seleccionado
             if filtro_anio in matriz.index:
                 matriz_anio = matriz.loc[filtro_anio].reset_index()
                 datos_anio_actual = matriz.loc[filtro_anio].tolist()
             else:
                 datos_anio_actual = [0] * 52 # O manejar como vacío
+
+            # Altura del eje para que la zona de Brote termine justo arriba
+            vmax_linea = max(
+                float(np.nanmax(datos_anio_actual)) if len(datos_anio_actual) else 0,
+                float(q75.max())
+            )
+            ymax = max(1, int(np.ceil(vmax_linea * 1.12 / 1000.0) * 1000))
+            zona_brote = [max(ymax - float(v), 0.0) for v in q75]
 
             # Subtítulo dinámico
             subtitulo_parts = []
@@ -164,34 +184,56 @@ if st.button("Generar Gráfico"):
                     {"type": "inside", "startValue": 0, "endValue": 52},
                     {"type": "slider", "startValue": 0, "endValue": 52},
                 ],
-                "legend": {"data": ["Exito", "Seguridad", "Alerta", f"Año {filtro_anio}"]},
-                "grid": {"backgroundColor": "rgba(255, 0, 0, 0.1)"},
+                "legend": {"data": ["Exito", "Seguridad", "Alerta", "Brote", f"Año {filtro_anio}"]},
+                "grid": {"backgroundColor": "rgba(255, 255, 255, 0)"},
                 "xAxis": {"type": "category", "data": list(range(1, 53))},
-                "yAxis": {"type": "value"},
+                "yAxis": {"type": "value", "name": "Casos", "max": ymax},
                 "series": [
                     {
                         "name": "Exito",
                         "type": "line",
                         "stack": "Total",
-                        "areaStyle": {"color": "rgba(144, 238, 144, 1)"},
-                        "emphasis": {"focus": "series"},
-                        "data": cuartiles['Exito'].tolist(),
+                        "itemStyle": {"color": "#5470c6"},
+                        "areaStyle": {"color": "rgba(84, 112, 198, 0.9)"},
+                        "lineStyle": {"opacity": 0},
+                        "symbol": "none",
+                        "tooltip": {"show": False},
+                        "data": q25.tolist(),
                     },
                     {
                         "name": "Seguridad",
                         "type": "line",
                         "stack": "Total",
-                        "areaStyle": {"color": "rgba(100, 149, 237, 1)"},
-                        "emphasis": {"focus": "series"},
-                        "data": cuartiles['Seguridad'].tolist(),
+                        "itemStyle": {"color": "#91cc75"},
+                        "areaStyle": {"color": "rgba(145, 204, 117, 0.9)"},
+                        "lineStyle": {"opacity": 0},
+                        "symbol": "none",
+                        "tooltip": {"show": False},
+                        "data": tramo_seguridad.tolist(),
                     },
                     {
                         "name": "Alerta",
                         "type": "line",
                         "stack": "Total",
-                        "areaStyle": {"color": "rgba(255, 255, 0, 1)"},
-                        "emphasis": {"focus": "series"},
-                        "data": cuartiles['Alerta'].tolist(),
+                        "itemStyle": {"color": "#fac858"},
+                        "areaStyle": {"color": "rgba(250, 200, 88, 0.9)"},
+                        "lineStyle": {"opacity": 0},
+                        "symbol": "none",
+                        "tooltip": {"show": False},
+                        "data": tramo_alerta.tolist(),
+                    },
+                    {
+                        # Zona de Brote: fondo rojo encima del Q75, con la etiqueta
+                        # en la leyenda. Sin borde visible (solo relleno).
+                        "name": "Brote",
+                        "type": "line",
+                        "stack": "Total",
+                        "itemStyle": {"color": "#ee6666"},
+                        "areaStyle": {"color": "rgba(238, 102, 102, 0.9)"},
+                        "lineStyle": {"opacity": 0},
+                        "symbol": "none",
+                        "tooltip": {"show": False},
+                        "data": zona_brote,
                     },
                     {
                         "name": f"Año {filtro_anio}",
@@ -216,6 +258,11 @@ if st.button("Generar Gráfico"):
 
             # Mostrar el gráfico de ECharts
             st_echarts(options=options, height="600px")
+            st.caption(
+                "Corredor por cuantiles de los 5 años previos (casos). Éxito: bajo Q25 · "
+                "Seguridad: Q25–Q50 · Alerta: Q50–Q75 · Brote: sobre Q75 (fondo rojo). "
+                "La línea negra es la del año elegido; arrastra la barra inferior para zoom."
+            )
             
             # Sección para la fecha de última actualización
             if 'FECHAREGISTROCLINICA' in clinica.columns:
