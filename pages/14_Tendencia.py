@@ -1,5 +1,6 @@
 # pages/14_Tendencia.py - Análisis de Tendencias Epidemiológicas
 import sys
+import re
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -42,7 +43,10 @@ def cargar_temperatura_semanal():
         clima["SEMANA"] = clima["Fecha"].dt.isocalendar().week
         temp = clima.groupby(["ANIO", "SEMANA"])["TEMP_MEDIA"].mean().reset_index()
         temp["fecha"] = temp.apply(lambda x: epiweek_to_date(int(x["ANIO"]), int(x["SEMANA"])), axis=1)
-        return temp[["fecha", "TEMP_MEDIA"]].sort_values("fecha")
+        # deduplicar fechas (SE 52/53 del calendario puede hacer colisión) —
+        # si no, el exog queda más largo que la serie y SARIMAX explota
+        temp = temp[["fecha", "TEMP_MEDIA"]].drop_duplicates(subset="fecha")
+        return temp.sort_values("fecha")
     except Exception:
         return None
 
@@ -258,8 +262,10 @@ with col1:
     events = get_distinct_events()
     evento = st.selectbox("🦠 Patología", events)
 with col2:
+    # Selector desplegable: mínimo 2027 (un año después del actual), máximo 2040
     año_actual = datetime.now().year
-    año_futuro = st.selectbox("📅 Año a Predecir", [año_actual + 1])
+    año_mínimo = max(2027, año_actual + 1)
+    año_futuro = st.selectbox("📅 Año a Predecir", list(range(año_mínimo, 2041)))
 with col3:
     opciones_modelo = (["Prophet", "SARIMA", "SARIMA + Clima", "ETS", "Deseasonalizada"]
                        if PROPHET_AVAILABLE else
@@ -277,12 +283,19 @@ df_ts = df_evento.groupby(["ANIO", "SEMANA"])["CANTIDAD"].sum().reset_index()
 df_ts['fecha'] = df_ts.apply(lambda x: epiweek_to_date(int(x['ANIO']), int(x['SEMANA'])), axis=1)
 df_ts = df_ts.sort_values('fecha').reset_index(drop=True)
 
-# Calcular periodos de predicción
+# Calcular periodos de predicción: desde la última semana con datos
+# hasta el final del año elegido (se cubre el año completo por año_futuro)
 último_año = int(df_ts['ANIO'].max())
 última_semana = int(df_ts[df_ts['ANIO'] == último_año]['SEMANA'].max())
-periodos_prediccion = (52 - última_semana) + 52 
+if int(año_futuro) <= último_año:
+    periodos_prediccion = max(1, 52 - última_semana)
+else:
+    periodos_prediccion = (52 - última_semana) + 52 * (int(año_futuro) - último_año)
 
-st.info(f"Histórico: {df_ts['ANIO'].min()}-{último_año} | Prediciendo {periodos_prediccion} semanas.")
+st.info(
+    f"Histórico: {df_ts['ANIO'].min()}-{último_año} (hasta SE {última_semana}) | "
+    f"Prediciendo hasta fin de {año_futuro}: {periodos_prediccion} semanas."
+)
 
 # Covariable de temperatura (clima) alineada al histórico — solo si está disponible
 temp_semanal = cargar_temperatura_semanal()
@@ -290,6 +303,16 @@ exog_temp = None
 if temp_semanal is not None and not temp_semanal.empty:
     temp_merged = df_ts[['fecha']].merge(temp_semanal, on='fecha', how='left')['TEMP_MEDIA']
     exog_temp = temp_merged.ffill().bfill().values
+
+# Temperatura FUTURA para el horizonte de predicción: climatología semanal
+# (promedio histórico del mismo phase de semana del ciclo de 52). Sin esto,
+# SARIMAX no puede calcular multi-paso con exog fuera de muestra.
+exog_futuro = None
+if exog_temp is not None:
+    _t = np.asarray(exog_temp, dtype=float)
+    _clim = pd.Series(_t).groupby(np.arange(len(_t)) % 52).mean()
+    _pos_fut = np.arange(len(_t), len(_t) + periodos_prediccion)
+    exog_futuro = _clim.iloc[_pos_fut % 52].to_numpy()
 
 # TABS
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Serie & Descomposición", "🔍 Diagnóstico", "🎯 Predicción", "⚖️ Comparación (Backtest)"])
@@ -363,7 +386,15 @@ with tab3:
                 kwargs['exog'] = exog_temp
             model = SARIMAX(df_ts['CANTIDAD'], order=(1,1,1), seasonal_order=(1,1,1,52), **kwargs)
             res = model.fit(disp=False)
-            y_centro = np.maximum(res.forecast(steps=periodos_prediccion), 0)
+            if usar_clima:
+                # Multi-paso con exog fuera de sample: pasar la climatología futura
+                try:
+                    _pred = res.get_forecast(steps=periodos_prediccion, exog=exog_futuro)
+                    y_centro = np.maximum(np.asarray(_pred.predicted_mean), 0)
+                except TypeError:
+                    y_centro = np.maximum(np.asarray(res.forecast(periodos_prediccion, exog=exog_futuro)), 0)
+            else:
+                y_centro = np.maximum(res.forecast(steps=periodos_prediccion), 0)
             # IC 80% bootstrap sobre residuos
             resid = res.resid[~np.isnan(res.resid)] if hasattr(res, 'resid') else None
             ic_low, ic_high, ic50_low, ic50_high = bootstrap_ic_bandas(y_centro, resid, periodos_prediccion)
@@ -456,14 +487,122 @@ with tab3:
         showarrow=False, textangle=-90, xanchor="left"
     )
 
+    # Marcar el año elegido: sombreado suave desde el 1 de enero al fin del año
+    try:
+        ini_año = epiweek_to_date(int(año_futuro), 1)
+        fin_año = epiweek_to_date(int(año_futuro), 52) + timedelta(days=6)
+        fig_pred.add_vrect(
+            x0=ini_año, x1=fin_año, fillcolor="rgba(84,112,198,0.07)",
+            line_width=0, annotation_text=f"Año {año_futuro}",
+            annotation_position="top left",
+            annotation_font=dict(size=11, color="#5470c6"))
+    except Exception:
+        pass
+
     style_fig(fig_pred, height=520, x_title="Fecha", y_title="Casos",
-              titulo=f"Fan chart — predicción {modelo_seleccionado} ({periodos_prediccion} semanas)")
+              titulo=f"Fan chart — predicción {modelo_seleccionado} hasta fin de {año_futuro} ({periodos_prediccion} semanas)")
     st.plotly_chart(fig_pred, width="stretch")
     st.caption(
         "Línea punteada: predicción central. Bandas: intervalo de confianza del **50%** "
         "(tono intenso) y del **80%** (tono claro), estimados por bootstrap sobre los "
         "residuos del modelo. El rombo marca el pico estimado del período."
     )
+
+    # ---- CALENDARIO DE CASOS: pivot SE 1 a SE 52 del año elegido ----
+    if y_centro is not None:
+        st.divider()
+        st.subheader(f"🗓️ Casos por semana — {evento} · {año_futuro}")
+        st.caption(
+            "Casos previstos por semana epidemiológica (SE 1 a SE 52) del año elegido, "
+            "según el modelo seleccionado. Las barras de error(vertical) son el IC 80%."
+        )
+
+        # Reconstruir el calendario epidemiológico futuro (ANIO, SEMANA) paso a paso
+        filas = []
+        _anio, _sem = último_año, última_semana
+        _y_centro = np.asarray(y_centro, dtype=float)
+        _ic80lo = np.asarray(ic_low) if ic_low is not None else None
+        _ic80hi = np.asarray(ic_high) if ic_high is not None else None
+        _ic50lo = np.asarray(ic50_low) if ic50_low is not None else None
+        _ic50hi = np.asarray(ic50_high) if ic50_high is not None else None
+        for i in range(len(_y_centro)):
+            _sem += 1
+            if _sem > 52:
+                _sem = 1
+                _anio += 1
+            fila = {
+                "ANIO": _anio,
+                "SEMANA": _sem,
+                "FECHA": (future_dates[i] if i < len(future_dates) else epiweek_to_date(_anio, _sem)).strftime("%Y-%m-%d"),
+                "CASOS": float(_y_centro[i]),
+            }
+            if _ic80lo is not None and i < len(_ic80lo):
+                fila["IC80_INFERIOR"] = float(_ic80lo[i])
+                fila["IC80_SUPERIOR"] = float(_ic80hi[i])
+            if _ic50lo is not None and i < len(_ic50lo):
+                fila["IC50_INFERIOR"] = float(_ic50lo[i])
+                fila["IC50_SUPERIOR"] = float(_ic50hi[i])
+            filas.append(fila)
+        df_cal = pd.DataFrame(filas)
+        df_sem = df_cal[df_cal["ANIO"] == int(año_futuro)].sort_values("SEMANA").reset_index(drop=True)
+        # Pivot: SE 1..52 (relleno en 0 por si faltara alguna semana)
+        _piv = df_sem.set_index("SEMANA").reindex(range(1, 53))
+        _piv["CASOS"] = _piv["CASOS"].fillna(0.0)
+        _semanas = list(range(1, 53))
+        _casos = _piv["CASOS"].values
+
+        total_año = float(_piv["CASOS"].sum())
+        st.markdown(f"**📊 Total estimado {año_futuro}: {total_año:,.0f} casos**".replace(",", "."))
+
+        # Barras SE 1..52 con el IC 80% como barras de error + pico estimado
+        if "IC80_INFERIOR" in _piv.columns:
+            _err_hi = np.maximum(_piv["IC80_SUPERIOR"] - _piv["CASOS"], 0).fillna(0).values
+            _err_lo = np.maximum(_piv["CASOS"] - _piv["IC80_INFERIOR"], 0).fillna(0).values
+            _error_y = dict(array=_err_hi, arrayminus=_err_lo,
+                            color="rgba(84,112,198,0.45)", thickness=1)
+        else:
+            _error_y = None
+        fig_cal = go.Figure()
+        fig_cal.add_trace(go.Bar(
+            x=_semanas, y=_casos, width=0.75,
+            marker_color="rgba(84,112,198,0.75)", name="Casos previstos",
+            error_y=_error_y,
+            hovertemplate="SE %{x} → %{y:,.0f} casos<extra></extra>"))
+        try:
+            i_pico_cal = int(np.argmax(_casos))
+            fig_cal.add_annotation(
+                x=_semanas[i_pico_cal], y=float(_casos[i_pico_cal]),
+                text=f"Pico: SE {_semanas[i_pico_cal]}",
+                showarrow=True, arrowhead=2, ay=-30, font=dict(size=11),
+                bgcolor="rgba(255,255,255,0.85)", bordercolor="#5470c6", borderwidth=1)
+        except Exception:
+            pass
+        fig_cal.update_layout(
+            height=380, template="plotly_white",
+            margin=dict(l=10, r=10, t=30, b=10), font=dict(size=12),
+            hovermode="x unified",
+            xaxis=dict(title_text="Semana Epidemiológica", dtick=4),
+            yaxis=dict(title_text="Casos previstos"))
+        st.plotly_chart(fig_cal, width="stretch")
+
+        # Tabla hueca: SE, fecha, casos y bandas de confianza — lista para Excel
+        st.markdown(f"**Tabla semanal — {evento} · {año_futuro}**")
+        df_tab = _piv.reset_index()  # columnas: SEMANA, ANIO, FECHA?, CASOS, ICs
+        df_tab["FECHA"] = df_tab["FECHA"].fillna(
+            df_tab["SEMANA"].apply(
+                lambda s: epiweek_to_date(int(año_futuro), int(s)).strftime("%Y-%m-%d")))
+        cols_tab = [c for c in ["SEMANA", "FECHA", "CASOS",
+                                "IC50_INFERIOR", "IC50_SUPERIOR",
+                                "IC80_INFERIOR", "IC80_SUPERIOR"] if c in df_tab.columns]
+        _csv = df_tab[cols_tab].round(1).to_csv(index=False).encode("utf-8-sig")
+        _nombre_ev = re.sub(r"[^A-Za-z0-9_-]+", "_", str(evento)).strip("_") or "evento"
+        st.download_button(
+            "⬇️ Descargar CSV (Excel)",
+            data=_csv,
+            file_name=f"calendario_{año_futuro}_{_nombre_ev}.csv",
+            mime="text/csv",
+            key=f"calendario_csv_{año_futuro}_{_nombre_ev}")
+        st.dataframe(df_tab[cols_tab].round(1), width="stretch", hide_index=True)
 
 with tab4:
     st.subheader("Comparación de Modelos (Backtest Walk-Forward)")
